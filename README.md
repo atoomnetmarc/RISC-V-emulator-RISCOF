@@ -22,7 +22,9 @@ The plugin to interface the RISC-V emulator to RISCOF is [rve/riscof_rve.py](rve
 
 ## Execute tests
 
-`riscof run --no-browser --config=config.ini --suite=riscv-arch-test/riscv-test-suite/ --env=riscv-arch-test/riscv-test-suite/env`
+```bash
+./runtests.sh
+```
 
 ## Report
 
