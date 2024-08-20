@@ -4,7 +4,7 @@ This is intended for me only. It contains code and hints on how to use [RISCOF](
 
 Read and execute the [RISCOF quickstart](https://riscof.readthedocs.io/en/stable/installation.html) to prime your machine with all the needed tools.
 
-Choose Ubuntu 22. Or try to install RISCOF under [Gentoo Linux](README-gentoo.md)).
+Choose Ubuntu 22. Or try to install RISCOF under [Gentoo Linux](README-gentoo.md).
 
 ## Compile `rve`
 
