@@ -63,6 +63,7 @@ eval $(opam config env)
 git clone https://github.com/riscv/sail-riscv.git
 cd sail-riscv
 make
+ARCH=RV32 make
 sudo ln -s "$(pwd)/c_emulator/riscv_sim_RV64" /usr/local/bin/riscv_sim_RV64
 sudo ln -s "$(pwd)/c_emulator/riscv_sim_RV32" /usr/local/bin/riscv_sim_RV32
 ```
