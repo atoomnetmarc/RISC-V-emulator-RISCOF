@@ -1,10 +1,10 @@
-These instructions try to install RISCOF, RISC-V toolchain and SAIL under Gentoo Linux needed for running `runtests.sh`.
+These instructions try to install RISCOF, RISC-V toolchain and SAIL under Arch Linux needed for running `runtests.sh`.
 
 # Install general tools
 
 ```bash
-sudo emerge --sync
-sudo emerge --noreplace dev-lang/python dev-python/pip dev-vcs/git dev-python/virtualenv
+sudo pacman --sync --refresh
+sudo pacman --sync --needed python python-pip git python-virtualenv
 ```
 
 # Install RISCOF
@@ -39,10 +39,7 @@ deactivate
 # Install RISCV-GNU Toolchain
 
 ```bash
-sudo eselect repository enable riscv
-sudo emerge --sync riscv
-sudo emerge --noreplace crossdev
-sudo crossdev --target riscv32-unknown-elf
+yay --sync riscv32-gnu-toolchain-elf-bin
 ```
 
 Test RISCV gcc:
@@ -54,7 +51,7 @@ riscv32-unknown-elf-gcc --version
 
 Compile reference emulator:
 ```bash
-sudo emerge --noreplace dev-ml/opam sci-mathematics/z3
+sudo pacman --sync --needed opam z3 cmake
 
 opam init -y --disable-sandboxing
 opam switch create 5.1.0
@@ -62,10 +59,9 @@ opam install sail -y
 eval $(opam config env)
 git clone https://github.com/riscv/sail-riscv.git
 cd sail-riscv
-make
-ARCH=RV32 make
-sudo ln -s "$(pwd)/c_emulator/riscv_sim_RV64" /usr/local/bin/riscv_sim_RV64
-sudo ln -s "$(pwd)/c_emulator/riscv_sim_RV32" /usr/local/bin/riscv_sim_RV32
+./build_simulators.sh
+sudo ln -s "$(pwd)/build/c_emulator/riscv_sim_rv64d" /usr/local/bin/riscv_sim_RV64
+sudo ln -s "$(pwd)/build/c_emulator/riscv_sim_rv32d" /usr/local/bin/riscv_sim_RV32
 ```
 
 Test:
