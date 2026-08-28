@@ -60,18 +60,19 @@ Print the summary:
 make report CONFIG=rve-rv32i
 ```
 
-Run the test suite for every environment in the ini (optionally filtered by regex, resumable, logs in `work/test-all/`). Envs run `nproc + 1` at a time; the pio compile is serialized with a lock. Override the parallelism with the `PARALLEL` and `JOBS` environment variables:
+Run the test suite for a subset of the environments in the ini (optionally filtered by regex, resumable, logs in `work/test-all/`). Envs run `nproc + 1` at a time; the pio compile is serialized with a lock. Override the parallelism with the `PARALLEL` and `JOBS` environment variables. A mode flag is required; running the script with no flag prints usage with the env count for each mode:
 
 ```bash
-./scripts/test_all.sh
-./scripts/test_all.sh '^RV32IM'
+./scripts/test_all.sh --full              # every environment in the ini
+./scripts/test_all.sh --smoke            # each extension alone + maximal-inclusion envs
+./scripts/test_all.sh --smoke '^RV32IM'  # apply a regex after subset selection
 ```
 
 List the selected combinations without running them:
 
 ```bash
-./scripts/test_all.sh --dry-run '^RV32IM'
-PARALLEL=2 JOBS=2 ./scripts/test_all.sh
+./scripts/test_all.sh --smoke --dry-run
+PARALLEL=2 JOBS=2 ./scripts/test_all.sh --full
 ```
 
 Aggregate all summaries into an HTML report. The top shows a summary with the overall pass percentage. Below it, a collapsible section per instruction shows the pass/fail count and the failing envs:

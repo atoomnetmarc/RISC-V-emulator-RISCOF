@@ -2,20 +2,27 @@
 # Copyright Marc Ketel
 # SPDX-License-Identifier: Apache-2.0
 #
-# Run the ACT test suite for every PlatformIO environment in the emulator's
-# platformio_isa-extension-combination_env.ini.
+# Run the ACT test suite for a subset of the PlatformIO environments in the
+# emulator's platformio_isa-extension-combination_env.ini.
 #
-# Usage: test_all.sh [--dry-run] [filter-regex]
-#   e.g. test_all.sh '^RV32IM'        # only envs starting with RV32IM
-#        test_all.sh --dry-run        # only list the selected combinations
+# Usage: test_all.sh --full  [--dry-run] [filter-regex]
+#        test_all.sh --smoke [--dry-run] [filter-regex]
+#
+#   --full    run every environment in the ini (1360 envs).
+#   --smoke   run the smoke subset: each extension tested alone on the base
+#             ISA, plus every environment that is maximal under extension-set
+#             inclusion (no other env is a strict superset of it). Both parts
+#             are derived from the ini, so the subset tracks the matrix.
+#   --dry-run list the selected environments without running them.
+#   filter    a regex applied after subset selection, e.g. '^RV32IM'.
 #
 # Envs run in parallel, $(nproc) + 1 at a time. Each env's run_tests.py also
 # uses $(nproc) + 1 jobs; there is plenty of memory for the oversubscription.
 # The pio build (make build) is serialized with flock so only one compile
 # happens at a time. Override both counts with the PARALLEL and JOBS
 # environment variables, e.g. PARALLEL=2 JOBS=2 test_all.sh on a low-memory
-# machine. Per-env summaries land in work/test-all/<env>.log. Envs with an
-# A log counts as done only if it ends with the run_tests.py success line
+# machine. Per-env summaries land in work/test-all/<env>.log. An env counts
+# as done only if its log ends with the run_tests.py success line
 # ("RESULT: All N tests passed."); anything else (build failure, test
 # failure, interruption) is re-run on the next invocation.
 
@@ -26,16 +33,113 @@ OUTDIR=work/test-all
 PARALLEL=${PARALLEL:-$(( $(nproc) + 1 ))}
 JOBS=${JOBS:-$PARALLEL}
 
-if [ "${1:-}" = "--dry-run" ]; then
-  shift
-  dry_run=1
-else
-  dry_run=0
-fi
+# Parse flags. --full or --smoke is required; --dry-run is optional.
+mode=
+dry_run=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --full)  mode=full;  shift ;;
+    --smoke) mode=smoke; shift ;;
+    --dry-run) dry_run=1; shift ;;
+    --*) echo "Unknown option: $1" >&2; exit 2 ;;
+    *) break ;;
+  esac
+done
 FILTER=${1:-.}
 
-envs=$(grep -oP '^\[env:\K[^\]]+' "$INI" | grep -P "$FILTER")
-total=$(echo "$envs" | wc -l)
+if [ -z "$mode" ]; then
+  all=$(grep -oP '^\[env:\K[^\]]+' "$INI" | wc -l)
+  smoke=$(python3 - "$INI" <<'PY'
+import re, sys
+ini = sys.argv[1]
+EXTS = ["M","A","C","B","Zaamo","Zalrsc","Zba","Zbb","Zbc","Zbs","Zicsr","Zifencei"]
+def parse(env):
+    s = env[len("RV32I"):]
+    toks = []
+    for part in s.split("_"):
+        if not part:
+            continue
+        if part[0] in "MACB" and len(part) > 1 and part[1] not in "MACB":
+            i = 0
+            while i < len(part) and part[i] in "MACB":
+                toks.append(part[i]); i += 1
+            if i < len(part):
+                toks.append(part[i:])
+        else:
+            toks.append(part)
+    return frozenset(toks)
+envs = []
+with open(ini) as f:
+    for line in f:
+        m = re.match(r'^\[env:([^\]]+)\]', line)
+        if m:
+            envs.append(m.group(1))
+sets = {e: parse(e) for e in envs}
+singles = [e for e in envs if len(sets[e]) == 0 or (len(sets[e]) == 1 and next(iter(sets[e])) in EXTS)]
+maximal = []
+for e in envs:
+    se = sets[e]
+    if not any(se < sets[e2] for e2 in envs if e2 != e):
+        maximal.append(e)
+print(len(set(singles) | set(maximal)))
+PY
+)
+  cat >&2 <<EOF
+Usage: $0 --full  [--dry-run] [filter-regex]
+       $0 --smoke [--dry-run] [filter-regex]
+
+  --full    run every environment in the ini ($all envs).
+  --smoke   run the smoke subset: each extension alone on the base ISA, plus
+            every environment maximal under extension-set inclusion ($smoke envs).
+  --dry-run list the selected environments without running them.
+  filter    a regex applied after subset selection, e.g. '^RV32IM'.
+EOF
+  exit 2
+fi
+
+# Select the env list for the chosen mode, then apply the filter regex.
+if [ "$mode" = full ]; then
+  envs=$(grep -oP '^\[env:\K[^\]]+' "$INI")
+else
+  envs=$(python3 - "$INI" <<'PY'
+import re, sys
+ini = sys.argv[1]
+EXTS = ["M","A","C","B","Zaamo","Zalrsc","Zba","Zbb","Zbc","Zbs","Zicsr","Zifencei"]
+def parse(env):
+    s = env[len("RV32I"):]
+    toks = []
+    for part in s.split("_"):
+        if not part:
+            continue
+        if part[0] in "MACB" and len(part) > 1 and part[1] not in "MACB":
+            i = 0
+            while i < len(part) and part[i] in "MACB":
+                toks.append(part[i]); i += 1
+            if i < len(part):
+                toks.append(part[i:])
+        else:
+            toks.append(part)
+    return frozenset(toks)
+envs = []
+with open(ini) as f:
+    for line in f:
+        m = re.match(r'^\[env:([^\]]+)\]', line)
+        if m:
+            envs.append(m.group(1))
+sets = {e: parse(e) for e in envs}
+singles = [e for e in envs if len(sets[e]) == 0 or (len(sets[e]) == 1 and next(iter(sets[e])) in EXTS)]
+maximal = []
+for e in envs:
+    se = sets[e]
+    if not any(se < sets[e2] for e2 in envs if e2 != e):
+        maximal.append(e)
+for e in sorted(set(singles) | set(maximal)):
+    print(e)
+PY
+)
+fi
+envs=$(echo "$envs" | grep -P "$FILTER")
+total=$(echo "$envs" | grep -c .)
 start=$SECONDS
 
 run_one() {
