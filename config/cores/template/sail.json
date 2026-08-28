@@ -75,7 +75,7 @@
           "read_idempotent": true,
           "write_idempotent": true,
           "misaligned_fault": "NoFault",
-          "reservability": "RsrvNone",
+          "reservability": "RsrvEventual",
           "supports_cbo_zero": false
         },
         "include_in_device_tree": true

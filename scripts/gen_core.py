@@ -68,6 +68,26 @@ SUBSETS = {
         "params": ["  # B params", "  MUTABLE_MISA_B: true"],
         "header": ["ZBA_SUPPORTED", "ZBB_SUPPORTED", "ZBC_SUPPORTED", "ZBS_SUPPORTED"],
     },
+    # The standalone Zaamo/Zalrsc subsets carry no MUTABLE_MISA_A param: UDB
+    # only allows that parameter when the A extension itself is implemented.
+    "Zaamo": {
+        "udb": [("Zaamo", "1.0.0")],
+        "sail": ["Zaamo"],
+        "params": ["  # Zaamo params", "  MISALIGNED_AMO: false"],
+        "header": ["ZAAMO_SUPPORTED"],
+    },
+    "Zalrsc": {
+        "udb": [("Zalrsc", "1.0.0")],
+        "sail": ["Zalrsc"],
+        "params": [
+            "  # Zalrsc params",
+            '  LRSC_RESERVATION_STRATEGY: "reserve exactly enough to cover the access"',
+            "  LRSC_FAIL_ON_VA_SYNONYM: false",
+            '  LRSC_MISALIGNED_BEHAVIOR: "always raise access fault"',
+            "  LRSC_FAIL_ON_NON_EXACT_LRSC: false",
+        ],
+        "header": ["ZALRSC_SUPPORTED"],
+    },
     "Zicsr": {"udb": [("Zicsr", "2.0")], "sail": [], "params": [], "header": []},
     "Zifencei": {"udb": [("Zifencei", "2.0.0")], "sail": [], "params": [], "header": []},
     # The standalone Zb* subsets carry no MUTABLE_MISA_B param: UDB only
