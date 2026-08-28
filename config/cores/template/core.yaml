@@ -45,8 +45,10 @@ params:
   MTVAL_WIDTH: 32
 
   # Misaligned load/store support
-  MISALIGNED_LDST: false
+  MISALIGNED_LDST: true
   MISALIGNED_LDST_EXCEPTION_PRIORITY: low
+  MISALIGNED_MAX_ATOMICITY_GRANULE_SIZE: 4096
+  MISALIGNED_SPLIT_STRATEGY: sequential_bytes
 
   # CSR / implementation IDs
   MARCHID_IMPLEMENTED: true
