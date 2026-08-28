@@ -69,9 +69,22 @@ elfs:
 # project directory, so unset PLATFORMIO_WORKSPACE_DIR (the IDE sets it to /tmp).
 # The post-action in copy_binaries.py only runs on a real rebuild, so copy the
 # binary explicitly to keep binaries/ in sync even when the program is up to date.
+#
+# The emulator sources are prerequisites, so make rebuilds the binary whenever
+# the emulator code or its build configuration changed. The RISC-V-emulator
+# library is a symlinked PlatformIO dependency, so its headers count too.
+EMULATOR_SRC_DIR := $(abspath ../RISC-V-emulator-Native)
+EMULATOR_LIB_DIR := $(abspath ../RISC-V-emulator)
+EMULATOR_DEPS := \
+	$(wildcard $(EMULATOR_SRC_DIR)/src/*.c) \
+	$(wildcard $(EMULATOR_SRC_DIR)/include/*.h) \
+	$(wildcard $(EMULATOR_LIB_DIR)/include/*.h) \
+	$(EMULATOR_SRC_DIR)/platformio.ini \
+	$(EMULATOR_SRC_DIR)/platformio_isa-extension-combination_env.ini
+
 build: $(EMULATOR)
 
-$(EMULATOR):
+$(EMULATOR): $(EMULATOR_DEPS)
 	@mkdir -p "$(EMULATOR_DIR)"
 	@cd "$(EMULATOR_DIR)/.." && env -u PLATFORMIO_WORKSPACE_DIR pio run -e "$(EMULATOR_ENV)" && cp ".pio/build/$(EMULATOR_ENV)/program" "$(EMULATOR).tmp" && mv -f "$(EMULATOR).tmp" "$(EMULATOR)"
 
