@@ -1,34 +1,84 @@
-This is intended for me only. It contains code and hints on how to use [RISCOF](https://riscof.readthedocs.io/) to run [riscv-non-isa](https://github.com/riscv-non-isa/riscv-arch-test) test using my [Linux implementation](https://github.com/atoomnetmarc/RISC-V-emulator-Native) of my [RISC-V emulator](https://github.com/atoomnetmarc/RISC-V-emulator).
+This is intended for me only. It contains code and hints on how to use [RISC-V Architectural Certification Tests](https://github.com/riscv/riscv-arch-test) tests using my [Linux implementation](https://github.com/atoomnetmarc/RISC-V-emulator-Native) of my [RISC-V emulator](https://github.com/atoomnetmarc/RISC-V-emulator).
 
-# Hints
+# Install
 
-Read and execute the [RISCOF quickstart](https://riscof.readthedocs.io/en/stable/installation.html) to prime your machine with all the needed tools.
+These instructions target Arch Linux. They install the Sail reference model, the RISC-V toolchain, and the ACT4 framework dependencies.
 
-Choose Ubuntu 22. Or try to install RISCOF under [Arch Linux](README-arch.md).
-
-## Compile `rve`
-
-Compile https://github.com/atoomnetmarc/RISC-V-emulator-Native
-
-You are done when you can execute `rve` from the commandline.
-
-## Configure ISA
-
-RISC-V emulator isa is configured in [rve/rve_isa.yaml](rve/rve_isa.yaml)
-
-## RISCOF Plugin
-
-The plugin to interface the RISC-V emulator to RISCOF is [rve/riscof_rve.py](rve/riscof_rve.py)
-
-## Execute tests
+## General tools
 
 ```bash
-./runtests.sh
+sudo pacman --sync --refresh
+sudo pacman --sync --needed python python-pip git python-virtualenv make cmake opam z3 uv gcc shellcheck
 ```
 
-## Report
+## RISC-V toolchain
 
-The test report will be put into the directory called `riscof_work`.
+```bash
+yay --sync --needed riscv32-gnu-toolchain-elf-bin
+```
+
+Verify:
+
+```bash
+riscv32-unknown-elf-gcc --version
+riscv32-unknown-elf-objcopy --version
+```
+
+## Build tools
+
+The script builds the Sail compiler, the RISC-V Sail model and the ACT4 framework under `./work/src/` (gitignored). It checks the system prerequisites above, then builds everything non-system. Re-running is safe; each step skips work that is already done.
+
+```bash
+./scripts/install.sh
+```
+
+Core configs are generated on demand. A config name maps to a PlatformIO environment in `../RISC-V-emulator-Native/platformio_isa-extension-combination_env.ini` (`rve-rv32imacb_zicsr_zifencei` maps to env `RV32IMACBZicsr_Zifencei`). The first `make` invocation with a new `CONFIG` runs `scripts/gen_core.py`, which writes `config/cores/atoomnetmarc/<name>/` from the templates in `config/cores/template/`. The generated directory is gitignored; `make clean` removes it. Per-core metadata (such as excluded ACT extensions) travels from the emulator's ini generator as `# act-` comment lines in the env block.
+
+# Usage
+
+Generate self-checking ELFs for a config:
+
+```bash
+make elfs CONFIG=rve-rv32i
+```
+
+Build the emulator binary for a config (PlatformIO, copied to `binaries/`):
+
+```bash
+make build CONFIG=rve-rv32i
+```
+
+Run all ELFs for a config on the emulator:
+
+```bash
+make run CONFIG=rve-rv32i
+```
+
+Print the summary:
+
+```bash
+make report CONFIG=rve-rv32i
+```
+
+Run the test suite for every environment in the ini (optionally filtered by regex, resumable, logs in `work/test-all/`). Envs run `nproc + 1` at a time; the pio compile is serialized with a lock. Override the parallelism with the `PARALLEL` and `JOBS` environment variables:
+
+```bash
+./scripts/test_all.sh
+./scripts/test_all.sh '^RV32IM'
+```
+
+List the selected combinations without running them:
+
+```bash
+./scripts/test_all.sh --dry-run '^RV32IM'
+PARALLEL=2 JOBS=2 ./scripts/test_all.sh
+```
+
+Aggregate all summaries into an HTML report. The top shows a summary with the overall pass percentage. Below it, a collapsible section per instruction shows the pass/fail count and the failing envs:
+
+```bash
+make report-all
+```
 
 # License
 

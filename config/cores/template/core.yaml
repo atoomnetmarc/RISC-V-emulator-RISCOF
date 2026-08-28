@@ -1,0 +1,180 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/riscv/riscv-unified-db/main/spec/schemas/config_schema.json
+
+# Copyright Marc Ketel
+# SPDX-License-Identifier: Apache-2.0
+
+# UDB Architecture Configuration for the RISC-V emulator, rv32i variant.
+---
+$schema: config_schema.json#
+kind: architecture configuration
+type: fully configured
+name: rve-rv32i
+description: RISC-V emulator (atoomnetmarc) - RV32I configuration DUT
+implemented_extensions:
+  - { name: I, version: "= 2.1" }
+  - { name: Sm, version: "= 1.12.0" }
+
+params:
+  # XLEN parameters
+  MXLEN: 32
+  PHYS_ADDR_WIDTH: 32
+
+  # MISA
+  MISA_CSR_IMPLEMENTED: true
+
+  # endianness
+  M_MODE_ENDIANNESS: little
+
+  # trap/exception behavior
+  TRAP_ON_ECALL_FROM_M: true
+  TRAP_ON_EBREAK: true
+  TRAP_ON_UNIMPLEMENTED_INSTRUCTION: true
+  TRAP_ON_RESERVED_INSTRUCTION: true
+  TRAP_ON_UNIMPLEMENTED_CSR: false
+  TRAP_ON_ILLEGAL_WLRL: false
+
+  # MTVAL reporting
+  REPORT_VA_IN_MTVAL_ON_BREAKPOINT: true
+  REPORT_VA_IN_MTVAL_ON_LOAD_MISALIGNED: true
+  REPORT_VA_IN_MTVAL_ON_STORE_AMO_MISALIGNED: true
+  REPORT_VA_IN_MTVAL_ON_INSTRUCTION_MISALIGNED: true
+  REPORT_VA_IN_MTVAL_ON_LOAD_ACCESS_FAULT: true
+  REPORT_VA_IN_MTVAL_ON_STORE_AMO_ACCESS_FAULT: true
+  REPORT_VA_IN_MTVAL_ON_INSTRUCTION_ACCESS_FAULT: true
+  REPORT_ENCODING_IN_MTVAL_ON_ILLEGAL_INSTRUCTION: true
+  MTVAL_WIDTH: 32
+
+  # Misaligned load/store support
+  MISALIGNED_LDST: false
+  MISALIGNED_LDST_EXCEPTION_PRIORITY: low
+
+  # CSR / implementation IDs
+  MARCHID_IMPLEMENTED: true
+  MIMPID_IMPLEMENTED: true
+  ARCH_ID_VALUE: 0x1
+  IMP_ID_VALUE: 0x0
+  VENDOR_ID_BANK: 0x0
+  VENDOR_ID_OFFSET: 0x0
+
+  # Sm params
+  PRECISE_SYNCHRONOUS_EXCEPTIONS: true
+  PMA_GRANULARITY: 3
+
+  # MTVEC
+  MTVEC_MODES: [1]
+  MTVEC_ACCESS: rw
+  MTVEC_ILLEGAL_WRITE_BEHAVIOR: retain
+  MTVEC_BASE_ALIGNMENT_VECTORED: 4
+
+  # CONFIG PTR
+  CONFIG_PTR_ADDRESS: 0x0
+
+  # HPM
+  HPM_EVENTS: [0]
+  HPM_COUNTER_EN:
+    [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]
+  COUNTINHIBIT_EN:
+    [
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]
+  NUM_PMP_ENTRIES: 0
+  MCOUNTENABLE_EN:
+    [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]
+# end
