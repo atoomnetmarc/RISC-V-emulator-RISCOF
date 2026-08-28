@@ -88,6 +88,12 @@ SUBSETS = {
         ],
         "header": ["ZALRSC_SUPPORTED"],
     },
+    "Zmmul": {
+        "udb": [("Zmmul", "1.0.0")],
+        "sail": ["Zmmul"],
+        "params": [],
+        "header": [],
+    },
     "Zicsr": {"udb": [("Zicsr", "2.0")], "sail": [], "params": [], "header": []},
     "Zifencei": {"udb": [("Zifencei", "2.0.0")], "sail": [], "params": [], "header": []},
     # The standalone Zb* subsets carry no MUTABLE_MISA_B param: UDB only
