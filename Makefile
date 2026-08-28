@@ -62,8 +62,11 @@ JOBS ?= $(shell nproc)
 
 .PHONY: elfs build run report clean
 
+# COLUMNS is forced wide because the udb progress bar crashes with
+# "negative argument" when the rendered config name does not fit the
+# terminal width (long ISA combination names).
 elfs:
-	@cd "$(ACT_DIR)" && PATH="$(MISE_PATH):$(SAIL_BIN):$(UDB_BIN):$$PATH" BUNDLE_GEMFILE="$(UDB_GEMFILE)" RUBYOPT="-rbundler/setup" make -j$$(nproc) elfs CONFIG_FILES="$(CONFIG_FILE)" $(if $(EXCLUDE_EXTENSIONS),EXCLUDE_EXTENSIONS="$(EXCLUDE_EXTENSIONS)",)
+	@cd "$(ACT_DIR)" && COLUMNS=250 PATH="$(MISE_PATH):$(SAIL_BIN):$(UDB_BIN):$$PATH" BUNDLE_GEMFILE="$(UDB_GEMFILE)" RUBYOPT="-rbundler/setup" make -j$$(nproc) elfs CONFIG_FILES="$(CONFIG_FILE)" $(if $(EXCLUDE_EXTENSIONS),EXCLUDE_EXTENSIONS="$(EXCLUDE_EXTENSIONS)",)
 
 # Build the emulator binary for the selected config. The build must run in the
 # project directory, so unset PLATFORMIO_WORKSPACE_DIR (the IDE sets it to /tmp).
