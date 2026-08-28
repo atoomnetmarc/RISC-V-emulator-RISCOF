@@ -62,6 +62,12 @@ for log in env_logs:
         else:
             entry[2][env].append(log_relpath)
 
+if not envs:
+    sys.exit(
+        f"No summaries found in {framework_dir}/rve-*/summary.log. "
+        "Run scripts/test_all.sh first (make clean removes them)."
+    )
+
 LOG_TAIL_LINES = 20
 
 

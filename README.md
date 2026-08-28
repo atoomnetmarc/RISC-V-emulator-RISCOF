@@ -48,7 +48,7 @@ Build the emulator binary for a config (PlatformIO, copied to `binaries/`):
 make build CONFIG=rve-rv32i
 ```
 
-Run all ELFs for a config on the emulator:
+Run all ELFs for a config on the emulator. The run log lands in `work/test-all/<env>.log`, so `make report-all` includes it:
 
 ```bash
 make run CONFIG=rve-rv32i
@@ -79,6 +79,12 @@ Aggregate all summaries into an HTML report. The top shows a summary with the ov
 
 ```bash
 make report-all
+```
+
+Remove the ACT build outputs (including the framework's `work/` directory), the generated core configs, and the `work/test-all/` logs:
+
+```bash
+make clean
 ```
 
 # License

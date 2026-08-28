@@ -75,8 +75,11 @@ $(EMULATOR):
 	@mkdir -p "$(EMULATOR_DIR)"
 	@cd "$(EMULATOR_DIR)/.." && env -u PLATFORMIO_WORKSPACE_DIR pio run -e "$(EMULATOR_ENV)" && cp ".pio/build/$(EMULATOR_ENV)/program" "$(EMULATOR).tmp" && mv -f "$(EMULATOR).tmp" "$(EMULATOR)"
 
+# The run log lands in work/test-all/<env>.log so report-all picks it up the
+# same way as the logs written by scripts/test_all.sh.
 run: build
-	@cd "$(ACT_DIR)" && PATH="$(MISE_PATH):$(SAIL_BIN):$$PATH" ./run_tests.py -j "$(JOBS)" "EMULATOR=$(EMULATOR) $(ELF2BIN)" "$(ELF_DIR)"
+	@mkdir -p work/test-all
+	@cd "$(ACT_DIR)" && PATH="$(MISE_PATH):$(SAIL_BIN):$$PATH" ./run_tests.py -j "$(JOBS)" "EMULATOR=$(EMULATOR) $(ELF2BIN)" "$(ELF_DIR)" 2>&1 | tee "$(CURDIR)/work/test-all/$(EMULATOR_ENV).log"
 
 report:
 	@cat "$(SUMMARY)"
@@ -88,4 +91,4 @@ report-all:
 
 clean:
 	@cd "$(ACT_DIR)" && PATH="$(MISE_PATH):$$PATH" make clean || true
-	@rm -rf "$(CONFIG_DIR)"/*
+	@rm -rf "$(CONFIG_DIR)"/* work/test-all "$(ACT_DIR)/work"
