@@ -34,9 +34,12 @@ if not env_logs:
     sys.exit(f"No *.log files found in {log_dir}. Run scripts/test_all.sh first.")
 
 line_re = re.compile(r"^(\S+?/\S+?/\S+?-\d+\.log)\s+(.+)$")
+simulated_re = re.compile(r"^Simulated (\d+) CPU instructions\.$", re.MULTILINE)
 
 # instruction -> [passed, total, env -> list of failed test log paths]
 stats = defaultdict(lambda: [0, 0, defaultdict(list)])
+# instruction -> sum of executed CPU instructions over all its test runs
+executed = defaultdict(int)
 envs = set()
 missing = []
 
@@ -61,6 +64,14 @@ for log in env_logs:
             entry[0] += 1
         else:
             entry[2][env].append(log_relpath)
+        # Aggregate the emulator's instruction count from the test log. Logs
+        # from emulator builds without the unconditional "Simulated" line
+        # simply contribute nothing.
+        test_log = framework_dir / f"rve-{env.lower()}" / "logs" / log_relpath
+        if test_log.exists():
+            m = simulated_re.search(test_log.read_text(errors="replace"))
+            if m:
+                executed[instruction] += int(m.group(1))
 
 if not envs:
     sys.exit(
@@ -69,6 +80,14 @@ if not envs:
     )
 
 LOG_TAIL_LINES = 20
+
+
+def fmt_eng(n):
+    # Compact "electronics" notation: 118749 -> 118k7, 1234567 -> 1M2.
+    for unit, divisor in (("T", 1_000_000_000_000), ("G", 1_000_000_000), ("M", 1_000_000), ("k", 1_000)):
+        if n >= divisor:
+            return f"{n / divisor:.1f}".replace(".", unit)
+    return str(n)
 
 
 def log_excerpt(env, log_relpath):
@@ -91,9 +110,12 @@ for instruction in sorted(stats):
         for log in logs
     )
     body = f"<ul>{env_items}</ul>" if env_items else "<p>All tests passed.</p>"
+    count = executed.get(instruction)
+    count_str = f"{fmt_eng(count)} instructions" if count else ""
     rows.append(
         f'<details><summary style="color:{color}">'
-        f"{html.escape(instruction)}: {passed}/{total} succeeded</summary>"
+        f"{html.escape(instruction)}: {passed}/{total} succeeded"
+        f"{', ' + count_str if count_str else ''}</summary>"
         f"{body}</details>"
     )
 
@@ -130,7 +152,8 @@ html_doc = f"""<!DOCTYPE html>
 <body>
 <h1>ACT report: {len(envs)} envs, {len(stats)} instructions</h1>
 <h2 style="color:{'#2e7d32' if all_passed else '#c62828'}">
-Summary: {total_passed}/{total_tests} tests passed ({percent:.1f}%)
+Summary: {total_passed}/{total_tests} tests passed ({percent:.1f}%)<br>
+<small>Total executed CPU instructions: {fmt_eng(sum(executed.values()))}</small>
 </h2>
 {missing_html}
 {egg}
