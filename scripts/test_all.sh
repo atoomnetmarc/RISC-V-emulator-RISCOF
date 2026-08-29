@@ -8,11 +8,11 @@
 # Usage: test_all.sh --full  [--dry-run] [filter-regex]
 #        test_all.sh --smoke [--dry-run] [filter-regex]
 #
-#   --full    run every environment in the ini (1360 envs).
-#   --smoke   run the smoke subset: each extension tested alone on the base
-#             ISA, plus every environment that is maximal under extension-set
-#             inclusion (no other env is a strict superset of it). Both parts
-#             are derived from the ini, so the subset tracks the matrix.
+#   --full    run every environment in the ini.
+#   --smoke   run the environments marked "# smoke" in the ini. The generator
+#             (generate-isa-extension-combination.py) marks: in default mode
+#             every env of the covering array; in --full mode each extension
+#             alone plus every maximal legal combination.
 #   --dry-run list the selected environments without running them.
 #   filter    a regex applied after subset selection, e.g. '^RV32IM'.
 #
@@ -49,48 +49,14 @@ FILTER=${1:-.}
 
 if [ -z "$mode" ]; then
   all=$(grep -oP '^\[env:\K[^\]]+' "$INI" | wc -l)
-  smoke=$(python3 - "$INI" <<'PY'
-import re, sys
-ini = sys.argv[1]
-EXTS = ["M","A","C","B","Zaamo","Zalrsc","Zba","Zbb","Zbc","Zbs","Zicsr","Zifencei"]
-def parse(env):
-    s = env[len("RV32I"):]
-    toks = []
-    for part in s.split("_"):
-        if not part:
-            continue
-        if part[0] in "MACB" and len(part) > 1 and part[1] not in "MACB":
-            i = 0
-            while i < len(part) and part[i] in "MACB":
-                toks.append(part[i]); i += 1
-            if i < len(part):
-                toks.append(part[i:])
-        else:
-            toks.append(part)
-    return frozenset(toks)
-envs = []
-with open(ini) as f:
-    for line in f:
-        m = re.match(r'^\[env:([^\]]+)\]', line)
-        if m:
-            envs.append(m.group(1))
-sets = {e: parse(e) for e in envs}
-singles = [e for e in envs if len(sets[e]) == 0 or (len(sets[e]) == 1 and next(iter(sets[e])) in EXTS)]
-maximal = []
-for e in envs:
-    se = sets[e]
-    if not any(se < sets[e2] for e2 in envs if e2 != e):
-        maximal.append(e)
-print(len(set(singles) | set(maximal)))
-PY
-)
+  smoke=$(grep -c '^# smoke' "$INI")
   cat >&2 <<EOF
 Usage: $0 --full  [--dry-run] [filter-regex]
        $0 --smoke [--dry-run] [filter-regex]
 
   --full    run every environment in the ini ($all envs).
-  --smoke   run the smoke subset: each extension alone on the base ISA, plus
-            every environment maximal under extension-set inclusion ($smoke envs).
+  --smoke   run the environments marked "# smoke" in the ini ($smoke envs):
+            each extension alone plus the maximal combinations.
   --dry-run list the selected environments without running them.
   filter    a regex applied after subset selection, e.g. '^RV32IM'.
 EOF
@@ -101,42 +67,15 @@ fi
 if [ "$mode" = full ]; then
   envs=$(grep -oP '^\[env:\K[^\]]+' "$INI")
 else
-  envs=$(python3 - "$INI" <<'PY'
-import re, sys
-ini = sys.argv[1]
-EXTS = ["M","A","C","B","Zaamo","Zalrsc","Zba","Zbb","Zbc","Zbs","Zicsr","Zifencei"]
-def parse(env):
-    s = env[len("RV32I"):]
-    toks = []
-    for part in s.split("_"):
-        if not part:
-            continue
-        if part[0] in "MACB" and len(part) > 1 and part[1] not in "MACB":
-            i = 0
-            while i < len(part) and part[i] in "MACB":
-                toks.append(part[i]); i += 1
-            if i < len(part):
-                toks.append(part[i:])
-        else:
-            toks.append(part)
-    return frozenset(toks)
-envs = []
-with open(ini) as f:
-    for line in f:
-        m = re.match(r'^\[env:([^\]]+)\]', line)
-        if m:
-            envs.append(m.group(1))
-sets = {e: parse(e) for e in envs}
-singles = [e for e in envs if len(sets[e]) == 0 or (len(sets[e]) == 1 and next(iter(sets[e])) in EXTS)]
-maximal = []
-for e in envs:
-    se = sets[e]
-    if not any(se < sets[e2] for e2 in envs if e2 != e):
-        maximal.append(e)
-for e in sorted(set(singles) | set(maximal)):
-    print(e)
-PY
-)
+  # Select envs marked with "# smoke" by the generator script.
+  envs=$(awk '
+    /^\[env:/ {
+      if (env != "" && smoke) print env
+      env = $0; sub(/^\[env:/, "", env); sub(/\]$/, "", env); smoke = 0
+    }
+    /^# smoke/ { smoke = 1 }
+    END { if (env != "" && smoke) print env }
+  ' "$INI")
 fi
 envs=$(echo "$envs" | grep -P "$FILTER")
 total=$(echo "$envs" | grep -c .)
