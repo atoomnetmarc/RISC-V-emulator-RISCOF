@@ -116,11 +116,80 @@ SUBSETS = {
         "params": [],
         "header": ["ZBC_SUPPORTED"],
     },
+    "Zbkc": {
+        "udb": [("Zbkc", "1.0.0")],
+        "sail": ["Zbkc"],
+        "params": [],
+        "header": ["ZBKC_SUPPORTED"],
+    },
+    "Zbkb": {
+        "udb": [("Zbkb", "1.0.0")],
+        "sail": ["Zbkb"],
+        "params": [],
+        "header": ["ZBKB_SUPPORTED"],
+    },
+    "Zbkx": {
+        "udb": [("Zbkx", "1.0.0")],
+        "sail": ["Zbkx"],
+        "params": [],
+        "header": ["ZBKX_SUPPORTED"],
+    },
+    "Zcb": {
+        "udb": [("Zcb", "1.0.0"), ("Zca", "1.0.0")],
+        "sail": ["Zcb"],
+        "params": [],
+        "header": ["ZCB_SUPPORTED"],
+    },
+    "Zcmop": {
+        "udb": [("Zcmop", "1.0.0"), ("Zca", "1.0.0")],
+        "sail": ["Zcmop"],
+        "params": [],
+        "header": [],
+    },
+    "Zimop": {
+        "udb": [("Zimop", "1.0.0")],
+        "sail": ["Zimop"],
+        "params": [],
+        "header": [],
+    },
+    "Zicond": {
+        "udb": [("Zicond", "1.0.0")],
+        "sail": ["Zicond"],
+        "params": [],
+        "header": ["ZICOND_SUPPORTED"],
+    },
+    "Zicntr": {
+        "udb": [("Zicntr", "2.0.0")],
+        "sail": ["Zicntr"],
+        "params": ["  # Zicntr params", "  TIME_CSR_IMPLEMENTED: true"],
+        "header": [],
+    },
+    "Zihintntl": {
+        "udb": [("Zihintntl", "1.0.0")],
+        "sail": ["Zihintntl"],
+        "params": [],
+        "header": [],
+    },
+    "Zihintpause": {
+        "udb": [("Zihintpause", "2.0.0")],
+        "sail": ["Zihintpause"],
+        "params": [],
+        "header": [],
+    },
     "Zbs": {
         "udb": [("Zbs", "1.0.0")],
         "sail": ["Zbs"],
         "params": [],
         "header": ["ZBS_SUPPORTED"],
+    },
+    # Not an ISA extension: the emulator is built with RVE_E_MISALIGNED=1.
+    # The base template already enables misaligned load/store support, so this
+    # subset only makes the env name parseable and generates a plain RV32I config.
+    "Misalign": {
+        "udb": [],
+        "sail": [],
+        "params": [],
+        "header": [],
     },
 }
 
@@ -139,16 +208,16 @@ def env_name_from_config(config: str) -> str:
 def subsets_from_env(env: str) -> list:
     # RV32IMACBZicsr_Zifencei -> ["M", "A", "C", "B", "Zicsr", "Zifencei"]
     body = env.removeprefix("RV32I")
-    named = sorted([key for key in SUBSETS if key.startswith("Z")], key=len, reverse=True)
+    named = sorted([key for key in SUBSETS if len(key) > 1], key=len, reverse=True)
     parts = re.split("(" + "|".join(named) + ")", body)
     subsets = []
     for part in parts:
-        if part == "_":
-            continue
         if part in SUBSETS:
             subsets.append(part)
         elif part:
             for letter in part:
+                if letter == "_":
+                    continue
                 if letter in SUBSETS:
                     subsets.append(letter)
                 else:
@@ -198,8 +267,9 @@ def gen_sail(out: Path, subsets: list) -> None:
     text = (TEMPLATE_DIR / "sail.json").read_text()
     for subset in subsets:
         for key in SUBSETS[subset]["sail"]:
+            # The template may already list the extension as supported.
             text, count = re.subn(rf'("{key}": \{{\s*"supported": )false', r"\1true", text)
-            if count != 1:
+            if count == 0 and not re.search(rf'"{key}": \{{\s*"supported": true', text):
                 sys.exit(f"sail.json template: expected one entry for {key!r}")
     (out / "sail.json").write_text(text)
 
