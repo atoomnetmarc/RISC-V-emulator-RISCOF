@@ -86,7 +86,11 @@ else
     END { if (env != "" && smoke) print env }
   ' "$INI")
 fi
-envs=$(echo "$envs" | grep -P "$FILTER")
+envs=$(echo "$envs" | grep -P "$FILTER" || true)
+if [ -z "$envs" ]; then
+  echo "No environments match filter '$FILTER'." >&2
+  exit 2
+fi
 total=$(echo "$envs" | grep -c .)
 
 run_one() {
