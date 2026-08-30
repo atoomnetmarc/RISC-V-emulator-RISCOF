@@ -69,8 +69,7 @@ Run the test suite for a subset of the environments in the ini (optionally filte
 ./scripts/test_all.sh --full              # every environment in the ini
 ./scripts/test_all.sh --smoke            # each extension alone + maximal-inclusion envs
 ./scripts/test_all.sh --smoke '^RV32IM'  # apply a regex after subset selection
-EMULATOR_TAG=clang scripts/test_all.sh --smoke              # whole smoke set with clang
-EMULATOR_TAG=clang,gcc,gcc-13 test_all.sh --full '^RV32I'   # compiler list
+EMULATOR_TAG=gcc-13 test_all.sh --full '^RV32I'   # compiler list (default: gcc,clang)
 ```
 
 List the selected combinations without running them:

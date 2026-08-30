@@ -16,11 +16,10 @@
 #   --dry-run list the selected environments without running them.
 #   filter    a regex applied after subset selection, e.g. '^RV32IM'.
 #
-# EMULATOR_TAG (env var) selects the compiler tag: gcc (default, PlatformIO
-# build) or a compiler built via cmake/run-matrix.py. A comma-separated list
-# runs the selection once per tag, e.g.
-#   EMULATOR_TAG=clang test_all.sh --smoke
-#   EMULATOR_TAG=clang,gcc-13 test_all.sh --full '^RV32I'
+# EMULATOR_TAG (env var) selects the compiler tag(s): a comma-separated list
+# runs the selection once per tag. The default is "gcc,clang"; other tags are
+# built via cmake/run-matrix.py, e.g.
+#   EMULATOR_TAG=gcc-13 test_all.sh --full '^RV32I'
 #
 # Envs run in parallel, $(nproc) + 1 at a time. Each env's run_tests.py also
 # uses $(nproc) + 1 jobs; there is plenty of memory for the oversubscription.
@@ -65,9 +64,9 @@ Usage: $0 --full  [--dry-run] [filter-regex]
   --dry-run list the selected environments without running them.
   filter    a regex applied after subset selection, e.g. '^RV32IM'.
 
-  EMULATOR_TAG=gcc (default) or a compiler built via cmake/run-matrix.py;
-  comma-separated lists run the selection once per tag, e.g.
-  EMULATOR_TAG=clang,gcc-13.
+  EMULATOR_TAG=gcc,clang (default) or a compiler built via
+  cmake/run-matrix.py; comma-separated lists run the selection once per tag,
+  e.g. EMULATOR_TAG=gcc-13.
 EOF
   exit 2
 fi
@@ -115,7 +114,7 @@ run_one() {
 }
 
 if [ "$dry_run" = 1 ]; then
-  for tag in $(echo "${EMULATOR_TAG:-gcc}" | tr ',' ' '); do
+  for tag in $(echo "${EMULATOR_TAG:-gcc,clang}" | tr ',' ' '); do
     OUTDIR=work/test-all/$tag
     echo "=== Compiler tag: $tag ==="
     i=0
@@ -141,7 +140,7 @@ start=$SECONDS
 overall_failed=0
 # Comma-separated tags: run the whole selection once per tag. Logs are kept
 # per tag in work/test-all/<tag>/.
-for tag in $(echo "${EMULATOR_TAG:-gcc}" | tr ',' ' '); do
+for tag in $(echo "${EMULATOR_TAG:-gcc,clang}" | tr ',' ' '); do
   OUTDIR=work/test-all/$tag
   mkdir -p "$OUTDIR"
   export OUTDIR EMULATOR_TAG=$tag

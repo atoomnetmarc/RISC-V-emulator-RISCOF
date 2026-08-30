@@ -10,8 +10,8 @@ ACT_DIR ?= $(CURDIR)/work/src/riscv-arch-test
 # Each config maps to a PlatformIO env binary in binaries/<compiler-tag>/.
 # The native PlatformIO build always uses the default gcc toolchain; override
 # EMULATOR_TAG to select binaries built by cmake/run-matrix.py with another
-# compiler (e.g. EMULATOR_TAG=clang or EMULATOR_TAG=gcc-13).
-EMULATOR_TAG ?= gcc
+# compiler (e.g. EMULATOR_TAG=gcc-13).
+EMULATOR_TAG ?= gcc,clang
 EMULATOR_DIR := $(abspath ../RISC-V-emulator-Native/binaries/$(EMULATOR_TAG))
 
 # Config directory layout in this repository.
