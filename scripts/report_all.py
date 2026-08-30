@@ -29,7 +29,8 @@ log_dir = Path(sys.argv[1] if len(sys.argv) > 1 else "work/test-all")
 framework_dir = Path("work/src/riscv-arch-test/work")
 out_path = log_dir / "report.html"
 
-env_logs = sorted(log_dir.glob("*.log"))
+# Logs are stored per compiler tag: work/test-all/<tag>/<env>.log.
+env_logs = sorted(log_dir.rglob("*.log"))
 if not env_logs:
     sys.exit(f"No *.log files found in {log_dir}. Run scripts/test_all.sh first.")
 
