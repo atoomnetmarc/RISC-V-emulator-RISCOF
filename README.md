@@ -42,7 +42,10 @@ Generate self-checking ELFs for a config:
 make elfs CONFIG=rve-rv32i
 ```
 
-Build the emulator binary for a config (PlatformIO, copied to `binaries/`):
+Build the emulator binary for a config (PlatformIO, copied to
+`binaries/gcc/`; override `EMULATOR_TAG` for binaries built by
+`cmake/run-matrix.py` with another compiler, e.g.
+`make run CONFIG=rve-rv32i EMULATOR_TAG=clang`):
 
 ```bash
 make build CONFIG=rve-rv32i
@@ -66,6 +69,8 @@ Run the test suite for a subset of the environments in the ini (optionally filte
 ./scripts/test_all.sh --full              # every environment in the ini
 ./scripts/test_all.sh --smoke            # each extension alone + maximal-inclusion envs
 ./scripts/test_all.sh --smoke '^RV32IM'  # apply a regex after subset selection
+EMULATOR_TAG=clang scripts/test_all.sh --smoke              # whole smoke set with clang
+EMULATOR_TAG=clang,gcc,gcc-13 test_all.sh --full '^RV32I'   # compiler list
 ```
 
 List the selected combinations without running them:

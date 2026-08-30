@@ -7,8 +7,12 @@ ACT_DIR ?= $(CURDIR)/work/src/riscv-arch-test
 
 # Emulator binary (lives in the sibling RISC-V-emulator-Native repository).
 # Absolute path: run_tests.py runs from inside $(ACT_DIR).
-# Each config maps to a PlatformIO env binary in binaries/.
-EMULATOR_DIR := $(abspath ../RISC-V-emulator-Native/binaries)
+# Each config maps to a PlatformIO env binary in binaries/<compiler-tag>/.
+# The native PlatformIO build always uses the default gcc toolchain; override
+# EMULATOR_TAG to select binaries built by cmake/run-matrix.py with another
+# compiler (e.g. EMULATOR_TAG=clang or EMULATOR_TAG=gcc-13).
+EMULATOR_TAG ?= gcc
+EMULATOR_DIR := $(abspath ../RISC-V-emulator-Native/binaries/$(EMULATOR_TAG))
 
 # Config directory layout in this repository.
 CONFIG_DIR := config/cores/atoomnetmarc
@@ -70,8 +74,6 @@ elfs:
 
 # Build the emulator binary for the selected config. The build must run in the
 # project directory, so unset PLATFORMIO_WORKSPACE_DIR (the IDE sets it to /tmp).
-# The post-action in copy_binaries.py only runs on a real rebuild, so copy the
-# binary explicitly to keep binaries/ in sync even when the program is up to date.
 #
 # The emulator sources are prerequisites, so make rebuilds the binary whenever
 # the emulator code or its build configuration changed. The RISC-V-emulator
@@ -87,15 +89,25 @@ EMULATOR_DEPS := \
 
 build: $(EMULATOR)
 
+# gcc tag: the PlatformIO build (system gcc). The post-action in
+# copy_binaries.py only runs on a real rebuild, so copy the binary explicitly
+# to keep binaries/ in sync even when the program is up to date.
+ifeq ($(EMULATOR_TAG),gcc)
 $(EMULATOR): $(EMULATOR_DEPS)
 	@mkdir -p "$(EMULATOR_DIR)"
 	@cd "$(EMULATOR_DIR)/.." && env -u PLATFORMIO_WORKSPACE_DIR pio run -e "$(EMULATOR_ENV)" && cp ".pio/build/$(EMULATOR_ENV)/program" "$(EMULATOR).tmp" && mv -f "$(EMULATOR).tmp" "$(EMULATOR)"
+else
+# Any other tag: build with the CMake driver in RISC-V-emulator-Native, using
+# the tag as the compiler name (e.g. clang, gcc-13).
+$(EMULATOR):
+	@cd "$(EMULATOR_SRC_DIR)" && cmake/run-matrix.py "$(EMULATOR_TAG)" --only "$(EMULATOR_ENV)"
+endif
 
-# The run log lands in work/test-all/<env>.log so report-all picks it up the
-# same way as the logs written by scripts/test_all.sh.
+# The run log lands in work/test-all/<tag>/<env>.log so report-all picks it up
+# the same way as the logs written by scripts/test_all.sh.
 run: build
-	@mkdir -p work/test-all
-	@cd "$(ACT_DIR)" && PATH="$(MISE_PATH):$(SAIL_BIN):$$PATH" ./run_tests.py -j "$(JOBS)" "EMULATOR=$(EMULATOR) $(ELF2BIN)" "$(ELF_DIR)" 2>&1 | tee "$(CURDIR)/work/test-all/$(EMULATOR_ENV).log"
+	@mkdir -p work/test-all/$(EMULATOR_TAG)
+	@cd "$(ACT_DIR)" && PATH="$(MISE_PATH):$(SAIL_BIN):$$PATH" ./run_tests.py -j "$(JOBS)" "EMULATOR=$(EMULATOR) $(ELF2BIN)" "$(ELF_DIR)" 2>&1 | tee "$(CURDIR)/work/test-all/$(EMULATOR_TAG)/$(EMULATOR_ENV).log"
 
 report:
 	@cat "$(SUMMARY)"
