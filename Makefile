@@ -95,7 +95,7 @@ build: $(EMULATOR)
 ifeq ($(EMULATOR_TAG),gcc)
 $(EMULATOR): $(EMULATOR_DEPS)
 	@mkdir -p "$(EMULATOR_DIR)"
-	@cd "$(EMULATOR_DIR)/.." && env -u PLATFORMIO_WORKSPACE_DIR pio run -e "$(EMULATOR_ENV)" && cp ".pio/build/$(EMULATOR_ENV)/program" "$(EMULATOR).tmp" && mv -f "$(EMULATOR).tmp" "$(EMULATOR)"
+	@cd "$(EMULATOR_SRC_DIR)" && env -u PLATFORMIO_WORKSPACE_DIR pio run -e "$(EMULATOR_ENV)" && cp ".pio/build/$(EMULATOR_ENV)/program" "$(EMULATOR).tmp" && mv -f "$(EMULATOR).tmp" "$(EMULATOR)"
 else
 # Any other tag: build with the CMake driver in RISC-V-emulator-Native, using
 # the tag as the compiler name (e.g. clang, gcc-13).
