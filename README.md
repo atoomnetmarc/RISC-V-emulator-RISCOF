@@ -34,6 +34,19 @@ The script builds the Sail compiler, the RISC-V Sail model and the ACT4 framewor
 
 Core configs are generated on demand. A config name maps to a PlatformIO environment in `../RISC-V-emulator-Native/platformio_isa-extension-combination_env.ini` (`rve-rv32imacb_zicsr_zifencei` maps to env `RV32IMACBZicsr_Zifencei`). The first `make` invocation with a new `CONFIG` runs `scripts/gen_core.py`, which writes `config/cores/atoomnetmarc/<name>/` from the templates in `config/cores/template/`. The generated directory is gitignored; `make clean` removes it. Per-core metadata (such as excluded ACT extensions) travels from the emulator's ini generator as `# act-` comment lines in the env block.
 
+# AVR backend (simavr)
+
+Besides the native backend, tests can run on an ATmega1284P simulated by [simavr](https://github.com/rv8-io/simavr). The avr backend builds the AVR firmware in `../RISC-V-emulator-AVR` (env `ATmega1284P_ACT`, all extensions enabled) and the simavr wrapper in `../RISC-V-emulator-SimAVR` (env `simavr-host`), then runs every test through the wrapper. The RISC-V RAM is backed by a simavr peripheral with host memory, and the firmware signals pass/fail through an exit register that stops the simulation.
+
+Config names of the form `rve-avr-<isa>` select the avr backend (`rve-avr-rv32i` runs the RV32I tests on the AVR). The generated `config.mk` sets `EMULATOR_BACKEND := avr`; run logs land in `work/test-all/avr/`. simavr and avr-gcc/avr-libc must be installed (see the SimAVR and AVR project READMEs).
+
+```bash
+make elfs build run CONFIG=rve-avr-rv32i
+BACKEND=avr ./scripts/test_all.sh --smoke   # every extension on the AVR
+```
+
+Since the AVR firmware is one binary with all extensions enabled, the smoke suite covers the entire AVR DUT; per-combination configs add no extra coverage.
+
 # Usage
 
 Generate self-checking ELFs for a config:

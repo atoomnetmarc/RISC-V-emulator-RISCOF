@@ -5,14 +5,19 @@
 # ACT4 framework clone (pinned to tag 4.0.0, gitignored under ./work/src/).
 ACT_DIR ?= $(CURDIR)/work/src/riscv-arch-test
 
-# Emulator binary (lives in the sibling RISC-V-emulator-Native repository).
-# Absolute path: run_tests.py runs from inside $(ACT_DIR).
-# Each config maps to a PlatformIO env binary in binaries/<compiler-tag>/.
-# The native PlatformIO build always uses the default gcc toolchain; override
-# EMULATOR_TAG to select binaries built by cmake/run-matrix.py with another
-# compiler (e.g. EMULATOR_TAG=gcc-13).
+# Backend selection: native (default) runs the emulator directly on the host;
+# avr runs it on an ATmega1284P simulated by simavr. The avr backend builds
+# the AVR firmware in ../RISC-V-emulator-AVR and the simavr wrapper in
+# ../RISC-V-emulator-SimAVR, and runs tests through the wrapper.
+EMULATOR_BACKEND ?= native
+
+# Native backend: emulator binary (lives in the sibling
+# RISC-V-emulator-Native repository). Absolute path: run_tests.py runs from
+# inside $(ACT_DIR). Each config maps to a PlatformIO env binary in
+# binaries/<compiler-tag>/. The native PlatformIO build always uses the
+# default gcc toolchain; override EMULATOR_TAG to select binaries built by
+# cmake/run-matrix.py with another compiler (e.g. EMULATOR_TAG=gcc-13).
 EMULATOR_TAG ?= gcc,clang
-EMULATOR_DIR := $(abspath ../RISC-V-emulator-Native/binaries/$(EMULATOR_TAG))
 
 # Config directory layout in this repository.
 CONFIG_DIR := config/cores/atoomnetmarc
@@ -34,7 +39,20 @@ endif
 include $(CONFIG_DIR)/$(CONFIG)/config.mk
 
 endif
+
+# Backend selection happens here, after the per-core config.mk include above
+# set EMULATOR_BACKEND. The avr backend runs tests through the simavr wrapper
+# in ../RISC-V-emulator-SimAVR; the native backend runs the emulator built
+# from ../RISC-V-emulator-Native.
+ifeq ($(EMULATOR_BACKEND),avr)
+EMULATOR_DIR := $(abspath ../RISC-V-emulator-SimAVR/binaries/gcc)
+# The wrapper binary has a fixed name; EMULATOR_ENV selects the AVR firmware
+# PlatformIO environment (ATmega1284P_ACT).
+EMULATOR := $(EMULATOR_DIR)/simavr-host
+else
+EMULATOR_DIR := $(abspath ../RISC-V-emulator-Native/binaries/$(EMULATOR_TAG))
 EMULATOR := $(EMULATOR_DIR)/$(EMULATOR_ENV)
+endif
 
 # Absolute path to the config file, passed into the external framework.
 CONFIG_FILE := $(abspath $(CONFIG_DIR)/$(CONFIG)/test_config.yaml)
@@ -52,8 +70,9 @@ SAIL_BIN := $(CURDIR)/work/src/sail-riscv/build/c_emulator
 UDB_BIN := $(ACT_DIR)/framework/src/act/data/vendor/bundle/ruby/3.4.0/bin
 UDB_GEMFILE := $(ACT_DIR)/framework/src/act/data/Gemfile
 
-# elf2bin.sh wrapper: objcopy + emulator. Passes the emulator path through.
-ELF2BIN := $(abspath scripts/elf2bin.sh)
+# run_test.sh wrapper: objcopy (elf2bin.sh) + emulator run. Passes the
+# emulator path (and, for the avr backend, the firmware hex) through.
+RUN_TEST := $(abspath scripts/run_test.sh)
 
 # mise paths. The ACT framework Makefile requires mise (or bare ruby/uv) on
 # PATH. Prepend the mise binary and shims directories so make targets work in
@@ -89,6 +108,29 @@ EMULATOR_DEPS := \
 
 build: $(EMULATOR)
 
+ifeq ($(EMULATOR_BACKEND),avr)
+# avr backend: build the AVR firmware (PlatformIO env from config.mk) and the
+# simavr wrapper, then copy both into the SimAVR binaries directory. The
+# wrapper is invoked as <wrapper> <firmware.hex> <test.bin> by run_test.sh.
+AVR_SRC_DIR := $(abspath ../RISC-V-emulator-AVR)
+SIMAVR_SRC_DIR := $(abspath ../RISC-V-emulator-SimAVR)
+AVR_DEPS := \
+	$(wildcard $(AVR_SRC_DIR)/src/*.c) \
+	$(wildcard $(AVR_SRC_DIR)/include/*.h) \
+	$(wildcard $(EMULATOR_LIB_DIR)/include/*.h) \
+	$(AVR_SRC_DIR)/platformio.ini
+SIMAVR_DEPS := \
+	$(wildcard $(SIMAVR_SRC_DIR)/src/*.c) \
+	$(wildcard $(SIMAVR_SRC_DIR)/include/*.h) \
+	$(SIMAVR_SRC_DIR)/platformio.ini
+FIRMWARE_HEX := $(EMULATOR_DIR)/$(EMULATOR_ENV).hex
+
+$(EMULATOR): $(AVR_DEPS) $(SIMAVR_DEPS)
+	@mkdir -p "$(EMULATOR_DIR)"
+	@cd "$(AVR_SRC_DIR)" && env -u PLATFORMIO_WORKSPACE_DIR pio run -e "$(EMULATOR_ENV)"
+	@cd "$(SIMAVR_SRC_DIR)" && env -u PLATFORMIO_WORKSPACE_DIR pio run -e simavr-host && cp ".pio/build/simavr-host/program" "$(EMULATOR).tmp" && mv -f "$(EMULATOR).tmp" "$(EMULATOR)"
+	@cp "$(AVR_SRC_DIR)/hex/$(EMULATOR_ENV).hex" "$(FIRMWARE_HEX).tmp" && mv -f "$(FIRMWARE_HEX).tmp" "$(FIRMWARE_HEX)"
+else
 # gcc tag: the PlatformIO build (system gcc). The post-action in
 # copy_binaries.py only runs on a real rebuild, so copy the binary explicitly
 # to keep binaries/ in sync even when the program is up to date.
@@ -102,12 +144,19 @@ else
 $(EMULATOR):
 	@cd "$(EMULATOR_SRC_DIR)" && cmake/run-matrix.py "$(EMULATOR_TAG)" --only "$(EMULATOR_ENV)"
 endif
+endif
 
 # The run log lands in work/test-all/<tag>/<env>.log so report-all picks it up
 # the same way as the logs written by scripts/test_all.sh.
+# The run log lands in work/test-all/<tag>/<env>.log so report-all picks it up
+# the same way as the logs written by scripts/test_all.sh. The avr backend
+# logs under the avr tag; the native backend logs under the compiler tag.
+RUN_TAG := $(if $(filter avr,$(EMULATOR_BACKEND)),avr,$(EMULATOR_TAG))
+RUN_TEST_CMD := EMULATOR=$(EMULATOR) $(if $(filter avr,$(EMULATOR_BACKEND)),EMULATOR_FIRMWARE=$(FIRMWARE_HEX) ,)$(RUN_TEST)
+
 run: build
-	@mkdir -p work/test-all/$(EMULATOR_TAG)
-	@cd "$(ACT_DIR)" && PATH="$(MISE_PATH):$(SAIL_BIN):$$PATH" ./run_tests.py -j "$(JOBS)" "EMULATOR=$(EMULATOR) $(ELF2BIN)" "$(ELF_DIR)" 2>&1 | tee "$(CURDIR)/work/test-all/$(EMULATOR_TAG)/$(EMULATOR_ENV).log"
+	@mkdir -p work/test-all/$(RUN_TAG)
+	@cd "$(ACT_DIR)" && PATH="$(MISE_PATH):$(SAIL_BIN):$$PATH" ./run_tests.py -j "$(JOBS)" "$(RUN_TEST_CMD)" "$(ELF_DIR)" 2>&1 | tee "$(CURDIR)/work/test-all/$(RUN_TAG)/$(EMULATOR_ENV).log"
 
 report:
 	@cat "$(SUMMARY)"
