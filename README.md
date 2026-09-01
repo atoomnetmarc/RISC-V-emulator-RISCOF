@@ -36,7 +36,13 @@ Core configs are generated on demand. A config name maps to a PlatformIO environ
 
 # AVR backend (simavr)
 
-Besides the native backend, tests can run on an ATmega1284P simulated by [simavr](https://github.com/rv8-io/simavr). The avr backend builds the AVR firmware in `../RISC-V-emulator-AVR` (env `ATmega1284P_ACT`, all extensions enabled) and the simavr wrapper in `../RISC-V-emulator-SimAVR` (env `simavr-host`), then runs every test through the wrapper. The RISC-V RAM is backed by a simavr peripheral with host memory, and the firmware signals pass/fail through an exit register that stops the simulation.
+Besides the native backend, tests can run on an ATmega1284P simulated by [simavr](https://github.com/rv8-io/simavr). The avr backend builds the AVR firmware in `../RISC-V-emulator-AVR` (env `ATmega1284P_ACT`, all extensions enabled, no instruction disassembly for maximum speed) and the simavr wrapper in `../RISC-V-emulator-SimAVR` (env `simavr-host`), then runs every test through the wrapper. The RISC-V RAM is backed by a simavr peripheral with host memory, and the firmware signals pass/fail through an exit register that stops the simulation.
+
+To debug a failing test, rebuild with the disassembly firmware (per-instruction UART disassembly, much slower):
+
+```bash
+make EMULATOR_ENV=ATmega1284P_ACT_DISASM build elfs run CONFIG=rve-avr-rv32i
+```
 
 Config names of the form `rve-avr-<isa>` select the avr backend (`rve-avr-rv32i` runs the RV32I tests on the AVR). The generated `config.mk` sets `EMULATOR_BACKEND := avr`; run logs land in `work/test-all/avr/`. simavr and avr-gcc/avr-libc must be installed (see the SimAVR and AVR project READMEs).
 
