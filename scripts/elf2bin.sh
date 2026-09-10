@@ -12,4 +12,4 @@ set -eu
 ELF="${1:?usage: elf2bin.sh <elf> <bin>}"
 BIN="${2:?usage: elf2bin.sh <elf> <bin>}"
 
-riscv32-unknown-elf-objcopy -O binary "$ELF" "$BIN"
+riscv64-unknown-elf-objcopy -O binary "$ELF" "$BIN"

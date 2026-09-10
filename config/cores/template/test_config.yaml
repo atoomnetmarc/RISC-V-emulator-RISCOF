@@ -1,6 +1,6 @@
 name: rve-rv32i
-compiler_exe: riscv32-unknown-elf-gcc # executable name on $PATH or full path to executable
-objdump_exe: riscv32-unknown-elf-objdump # executable name on $PATH or full path to executable, optional
+compiler_exe: riscv64-unknown-elf-gcc # executable name on $PATH or full path to executable
+objdump_exe: riscv64-unknown-elf-objdump # executable name on $PATH or full path to executable, optional
 ref_model_exe: sail_riscv_sim # executable name on $PATH or full path to executable
 ref_model_type: sail # sail or spike
 udb_config: rve-rv32i.yaml

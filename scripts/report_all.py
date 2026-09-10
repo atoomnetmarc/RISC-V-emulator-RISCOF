@@ -10,9 +10,13 @@
 # envs, each with a nested collapsible excerpt of the failing test log.
 #
 # Usage: report_all.py [log-dir]
-#   log-dir defaults to work/test-all and determines which envs are included.
-#   Summaries are read from work/src/riscv-arch-test/work/rve-<env>/summary.log.
-#   Output: work/test-all/report.html
+#   log-dir defaults to work/test-all (the Makefile's report-all target passes
+#   $(LOG_DIR) explicitly) and determines which envs are included.
+#   Summaries are read from <log-dir parent>/rve-<env>/summary.log: LOG_DIR is
+#   always <ACT-work>/test-all, so its parent is the framework work dir both
+#   on the host (work/src/riscv-arch-test/work) and in the container
+#   (/opt/riscv-arch-test/work).
+#   Output: <log-dir>/report.html
 #
 # A summary line looks like:
 #   rv32i/I/I-add-00.log    RVCP-SUMMARY: TEST PASSED - Test File "I-add-00.S"
@@ -26,7 +30,7 @@ from collections import defaultdict
 from pathlib import Path
 
 log_dir = Path(sys.argv[1] if len(sys.argv) > 1 else "work/test-all")
-framework_dir = Path("work/src/riscv-arch-test/work")
+framework_dir = log_dir.parent
 out_path = log_dir / "report.html"
 
 # Logs are stored per compiler tag: work/test-all/<tag>/<env>.log.

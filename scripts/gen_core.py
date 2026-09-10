@@ -23,6 +23,7 @@
 # framework and the Makefile wrapper need.
 
 import argparse
+import os
 import re
 import shutil
 import sys
@@ -31,7 +32,17 @@ from pathlib import Path
 REPO_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE_DIR = REPO_DIR / "config" / "cores" / "template"
 CORES_DIR = REPO_DIR / "config" / "cores" / "atoomnetmarc"
-INI_FILE = REPO_DIR.parent / "RISC-V-emulator-Native" / "platformio_isa-extension-combination_env.ini"
+# INI_FILE defaults to the ini under EMULATOR_SRC_DIR (the emulator source
+# repo). The ACT container sets EMULATOR_SRC_DIR=/emulator; override INI_FILE
+# directly for a non-standard layout.
+_EMULATOR_SRC_DIR = os.environ.get(
+    "EMULATOR_SRC_DIR",
+    str(REPO_DIR.parent / "RISC-V-emulator-Native"),
+)
+INI_FILE = Path(os.environ.get(
+    "INI_FILE",
+    str(Path(_EMULATOR_SRC_DIR) / "platformio_isa-extension-combination_env.ini"),
+))
 
 # The avr backend runs every ISA combination through one firmware environment
 # that enables all emulator extensions.

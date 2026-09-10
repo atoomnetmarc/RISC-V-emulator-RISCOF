@@ -11,13 +11,12 @@ ACT_DIR ?= $(CURDIR)/work/src/riscv-arch-test
 # ../RISC-V-emulator-SimAVR, and runs tests through the wrapper.
 EMULATOR_BACKEND ?= native
 
-# Native backend: emulator binary (lives in the sibling
-# RISC-V-emulator-Native repository). Absolute path: run_tests.py runs from
-# inside $(ACT_DIR). Each config maps to a PlatformIO env binary in
-# binaries/<compiler-tag>/. The native PlatformIO build always uses the
-# default gcc toolchain; override EMULATOR_TAG to select binaries built by
-# cmake/run-matrix.py with another compiler (e.g. EMULATOR_TAG=gcc-13).
+# Native backend: emulator binary in binaries/<compiler-tag>/ under the
+# emulator source repo. Override EMULATOR_TAG for other compilers (e.g. gcc-13).
 EMULATOR_TAG ?= gcc,clang
+
+# Emulator source directory (PlatformIO project). Container overrides to /emulator.
+EMULATOR_SRC_DIR ?= $(abspath ../RISC-V-emulator-Native)
 
 # Config directory layout in this repository.
 CONFIG_DIR := config/cores/atoomnetmarc
@@ -50,7 +49,7 @@ EMULATOR_DIR := $(abspath ../RISC-V-emulator-SimAVR/binaries/gcc)
 # PlatformIO environment (ATmega1284P_ACT).
 EMULATOR := $(EMULATOR_DIR)/simavr-host
 else
-EMULATOR_DIR := $(abspath ../RISC-V-emulator-Native/binaries/$(EMULATOR_TAG))
+EMULATOR_DIR := $(abspath $(EMULATOR_SRC_DIR)/binaries/$(EMULATOR_TAG))
 EMULATOR := $(EMULATOR_DIR)/$(EMULATOR_ENV)
 endif
 
@@ -61,35 +60,32 @@ CONFIG_FILE := $(abspath $(CONFIG_DIR)/$(CONFIG)/test_config.yaml)
 ELF_DIR := $(ACT_DIR)/work/$(CONFIG)/elfs
 SUMMARY := $(ACT_DIR)/work/$(CONFIG)/summary.log
 
-# Sail reference model binary, built under ./work/src/sail-riscv. The framework
-# resolves ref_model_exe via PATH, so prepend its build directory.
-SAIL_BIN := $(CURDIR)/work/src/sail-riscv/build/c_emulator
+# Sail reference model binary; container overrides to /opt/sail-riscv/build/c_emulator.
+SAIL_BIN ?= $(CURDIR)/work/src/sail-riscv/build/c_emulator
 
-# UDB gem binary, installed locally under the framework's data dir. The wrapper
-# needs the bundler environment to find the gem in vendor/bundle.
-UDB_BIN := $(ACT_DIR)/framework/src/act/data/vendor/bundle/ruby/3.4.0/bin
+# UDB gem binary; ruby version directory detected dynamically (no hardcoded 3.x.y).
+UDB_BIN := $(firstword $(wildcard $(ACT_DIR)/framework/src/act/data/vendor/bundle/ruby/*/bin))
 UDB_GEMFILE := $(ACT_DIR)/framework/src/act/data/Gemfile
 
 # run_test.sh wrapper: objcopy (elf2bin.sh) + emulator run. Passes the
 # emulator path (and, for the avr backend, the firmware hex) through.
 RUN_TEST := $(abspath scripts/run_test.sh)
 
-# mise paths. The ACT framework Makefile requires mise (or bare ruby/uv) on
-# PATH. Prepend the mise binary and shims directories so make targets work in
-# a shell without an activated mise environment.
-MISE_PATH := $(HOME)/.local/share/mise/shims:$(HOME)/.local/bin
+# Directory for per-env run logs (report-all aggregates these). Container overrides.
+LOG_DIR ?= $(CURDIR)/work/test-all
 
 # Parallel jobs for run_tests.py. Each emulator process allocates 16 MiB of
 # RAM, so keep this modest to avoid exhausting memory on large test suites.
 JOBS ?= $(shell nproc)
 
-.PHONY: elfs build run report clean
+.PHONY: elfs build run report report-all clean
 
 # COLUMNS is forced wide because the udb progress bar crashes with
 # "negative argument" when the rendered config name does not fit the
 # terminal width (long ISA combination names).
 elfs:
-	@cd "$(ACT_DIR)" && COLUMNS=250 PATH="$(MISE_PATH):$(SAIL_BIN):$(UDB_BIN):$$PATH" BUNDLE_GEMFILE="$(UDB_GEMFILE)" RUBYOPT="-rbundler/setup" make -j$$(nproc) elfs CONFIG_FILES="$(CONFIG_FILE)" $(if $(EXCLUDE_EXTENSIONS),EXCLUDE_EXTENSIONS="$(EXCLUDE_EXTENSIONS)",)
+	@test -n "$(UDB_BIN)" || { echo "UDB gems not found under $(ACT_DIR)/framework/src/act/data/vendor/bundle/ruby/*/bin - run in the container or install UDB gems"; exit 1; }
+	@cd "$(ACT_DIR)" && COLUMNS=250 PATH="$(SAIL_BIN):$(UDB_BIN):$$PATH" BUNDLE_GEMFILE="$(UDB_GEMFILE)" RUBYOPT="-rbundler/setup" make -j"$(JOBS)" elfs CONFIG_FILES="$(CONFIG_FILE)" $(if $(EXCLUDE_EXTENSIONS),EXCLUDE_EXTENSIONS="$(EXCLUDE_EXTENSIONS)",)
 
 # Build the emulator binary for the selected config. The build must run in the
 # project directory, so unset PLATFORMIO_WORKSPACE_DIR (the IDE sets it to /tmp).
@@ -97,7 +93,6 @@ elfs:
 # The emulator sources are prerequisites, so make rebuilds the binary whenever
 # the emulator code or its build configuration changed. The RISC-V-emulator
 # library is a symlinked PlatformIO dependency, so its headers count too.
-EMULATOR_SRC_DIR := $(abspath ../RISC-V-emulator-Native)
 EMULATOR_LIB_DIR := $(abspath ../RISC-V-emulator)
 EMULATOR_DEPS := \
 	$(wildcard $(EMULATOR_SRC_DIR)/src/*.c) \
@@ -146,17 +141,16 @@ $(EMULATOR):
 endif
 endif
 
-# The run log lands in work/test-all/<tag>/<env>.log so report-all picks it up
-# the same way as the logs written by scripts/test_all.sh.
-# The run log lands in work/test-all/<tag>/<env>.log so report-all picks it up
-# the same way as the logs written by scripts/test_all.sh. The avr backend
-# logs under the avr tag; the native backend logs under the compiler tag.
+# The run log lands in work/test-all/<tag>/<env>.log so report-all picks it up.
+# The avr backend logs under the avr tag; the native backend logs under the compiler tag.
 RUN_TAG := $(if $(filter avr,$(EMULATOR_BACKEND)),avr,$(EMULATOR_TAG))
 RUN_TEST_CMD := EMULATOR=$(EMULATOR) $(if $(filter avr,$(EMULATOR_BACKEND)),EMULATOR_FIRMWARE=$(FIRMWARE_HEX) ,)$(RUN_TEST)
 
-run: build
-	@mkdir -p work/test-all/$(RUN_TAG)
-	@cd "$(ACT_DIR)" && PATH="$(MISE_PATH):$(SAIL_BIN):$$PATH" ./run_tests.py -j "$(JOBS)" "$(RUN_TEST_CMD)" "$(ELF_DIR)" 2>&1 | tee "$(CURDIR)/work/test-all/$(RUN_TAG)/$(EMULATOR_ENV).log"
+# run is decoupled from build; the guard gives a clear error if the binary is missing.
+run:
+	@test -f "$(EMULATOR)" || { echo "EMULATOR '$(EMULATOR)' not found - run 'make build' on the host first"; exit 1; }
+	@mkdir -p "$(LOG_DIR)/$(RUN_TAG)"
+	@cd "$(ACT_DIR)" && PATH="$(SAIL_BIN):$$PATH" ./run_tests.py -j "$(JOBS)" "$(RUN_TEST_CMD)" "$(ELF_DIR)" 2>&1 | tee "$(LOG_DIR)/$(RUN_TAG)/$(EMULATOR_ENV).log"
 
 report:
 	@cat "$(SUMMARY)"
@@ -164,8 +158,8 @@ report:
 # Aggregate all summaries from scripts/test_all.sh into a per-instruction
 # failure report.
 report-all:
-	@python3 scripts/report_all.py
+	@python3 scripts/report_all.py "$(LOG_DIR)"
 
 clean:
-	@cd "$(ACT_DIR)" && PATH="$(MISE_PATH):$$PATH" make clean || true
-	@rm -rf "$(CONFIG_DIR)"/* work/test-all "$(ACT_DIR)/work"
+	@cd "$(ACT_DIR)" && make clean || true
+	@rm -rf "$(CONFIG_DIR)"/* "$(LOG_DIR)" "$(ACT_DIR)/work"
