@@ -125,12 +125,12 @@ run_one() {
     config="rve-avr-${config#rve-}"
   fi
   # Serialize the pio compile; the lock is only held for the build.
-  if ! flock "$OUTDIR/pio.lock" make build "CONFIG=$config" >> "$log" 2>&1; then
+  if ! flock "$OUTDIR/pio.lock" make build "CONFIG=$config" "EMULATOR_TAG=$EMULATOR_TAG" >> "$log" 2>&1; then
     echo "[$i/$total] $env: BUILD FAILED (see $log)"
     return 1
   fi
   echo "[$i/$total] $env: running"
-  if scripts/act_container.sh make elfs run "CONFIG=$config" "JOBS=$JOBS" EMULATOR_SRC_DIR=/emulator >> "$log" 2>&1; then
+  if scripts/act_container.sh make elfs run "CONFIG=$config" "JOBS=$JOBS" "EMULATOR_TAG=$EMULATOR_TAG" EMULATOR_SRC_DIR=/emulator >> "$log" 2>&1; then
     echo "[$i/$total] $env: $(tail -1 "$log")"
   else
     echo "[$i/$total] $env: FAILED (see $log)"
