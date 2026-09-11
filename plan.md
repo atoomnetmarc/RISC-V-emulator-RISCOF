@@ -32,7 +32,8 @@ One repository, strict `server/` + `client/` package split. The two packages do 
 
 ## API
 
-- `POST /batch {configs: [{config, tag}], lease_seconds}` -> `{accepted: true}`. The client posts the full list of `(config, tag)` pairs it intends to run. The server starts `make elfs` for each config in a serialized background queue. The config name is the existing core config identifier (`rve-rv32i`, `rve-avr-rv32im`); the server feeds it directly to `gen_core.py`. The tag is the compiler tag (`gcc`, `clang`, `gcc-13`); the server keys queues by `(config, tag)`.
+- `POST /batch {configs: [{config, tag}], lease_seconds}` -> `{accepted: true}`. The client posts the full list of `(config, tag)` pairs it intends to run. `lease_seconds` is optional with a default of 30 seconds. The server starts `make elfs` for each config in a serialized background queue. The config name is the existing core config identifier (`rve-rv32i`, `rve-avr-rv32im`); the server feeds it directly to `gen_core.py`. The tag is the compiler tag (`gcc`, `clang`, `gcc-13`); the server keys queues by `(config, tag)`.
+- `POST /batch` is an idempotent merge: a `(config, tag)` pair the server already knows is ignored, unknown pairs are appended to the queue. A client restart can re-post its batch without losing results.
 - `POST /claim {config, tag, lease_seconds}` -> `{test_id, binary}`, `{ready: false}`, or `{done: true}`. Hands out the next unclaimed test under a file lock. Claim carries a TTL. Returns `{ready: false}` while that config's ELFs are still generating; the client sleeps briefly and polls again. Returns `{done: true}` when the config's state file is complete.
 - `POST /result {test_id, config, tag, output, exit_status}` -> `200`. Idempotent. Server parses the verdict from the raw output, records it, releases the claim.
 - `GET /status?config=<name>&tag=<tag>` -> counts per state (pending, claimed, generating, pass, fail). For the live progress display.
@@ -54,17 +55,21 @@ One repository, strict `server/` + `client/` package split. The two packages do 
 - On the initial `POST /batch`, the server queues `make elfs` for each config in a serialized background queue: one config generates at a time. The client builds its emulator binary (`make build`) concurrently on the DUT side.
 - Per-config streaming: as soon as one config's `make elfs` finishes, the client can claim and run tests for that config while later configs generate. The unit of readiness is the whole config, not individual ELFs.
 - Claims for a config still generating return `{ready: false}`; the client sleeps briefly and polls again. The lease TTL starts only when a binary is handed out.
+- When `make elfs` for a config finishes, the server enumerates the test ids for that config by running `run_tests.py` in list mode and fills the queue from its output. The server owns discovery; the client never needs to know the test list.
 - Tests already recorded in the state file are skipped; a `(config, tag)` with a complete state file serves `{done: true}`.
 
 ## Verdicts and reports
 
 - The server parses the `RVCP-SUMMARY: TEST PASSED/FAILED` signature from the raw output with its own small parser (the framework's `run_tests.py` couples parsing to running and is not reused).
+- Raw output without the signature (crash, timeout, truncated output) is a definitive FAIL with the exit status recorded. There is no retry: the server re-queues nothing.
+- The lease TTL doubles as the run timeout: the client kills the DUT process when the lease expires and posts the truncated output, which fails the test for lack of a signature.
 - The server is the sole owner of verdict parsing and report rendering. The `GET /` page shows live progress; the `GET /report` page shows the final per-instruction cross-config report. Both read the same `summary.log` and `logs/` artifacts the server writes.
 
 ## Client
 
 - A Python 3 package in `client/`, pip-installable.
-- Inputs: server URL, the emulator's `platformio_isa-extension-combination_env.ini` path, selection mode (`--full`/`--smoke`/filter regex), compiler tag, run command for the DUT (emulator path, firmware hex for the avr backend), `--jobs N`, lease seconds. The emulator binary is built on the DUT side with `make build` before the client starts.
+- Inputs: server URL, the emulator's `platformio_isa-extension-combination_env.ini` path, selection mode (`--full`/`--smoke`/filter regex), compiler tag, `--run` command template for the DUT, `--jobs N`, lease seconds. The emulator binary is built on the DUT side with `make build` before the client starts.
+- The DUT run command is a single `--run` template with a `{binary}` placeholder, for example `--run './emu {binary}'` or `--run 'simavr -m atmega328p --firmware {binary}'`. The client substitutes the claimed binary path and executes the template with the shell. The client holds no backend knowledge: any DUT that fits a shell command works.
 - The client reads the ini, selects the ISA strings with the same `--full`/`--smoke`/filter logic as `test_all.sh`, maps each to a config name via the `# act-config:` comment, and posts the full `(config, tag)` list to the server in one `POST /batch`.
 - The client then iterates over each `(config, tag)` pair: claim -> write binary to temp file -> run on DUT (timeout = lease) -> post raw output and exit status -> repeat until `done` for that pair, then move to the next. With `--jobs N` a client runs N workers with concurrent claims within one config at a time.
 - One client per DUT. Multiple clients on one `(config, tag)` share the queue through the hand-out mechanism.
