@@ -3,7 +3,7 @@ ENTRY(rvtest_entry_point)
 
 SECTIONS
 {
-  . = 0x80000000;
+  . = {{LOAD_BASE}};
   .text.init    : { *(.text.init) }
   .text.rvtest  : { *(.text.rvtest) *(.text.rvtest.*) }
   . = ALIGN(0x4000);

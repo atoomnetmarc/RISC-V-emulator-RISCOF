@@ -3,13 +3,18 @@
 #
 # Run a command inside the ACT container image (riscv-emulator-tools-container).
 #
-# Dumb wrapper: resolves the image, assembles the podman run command (mounts +
-# workdir + INI_FILE export) and exec's the given command inside it. All other
-# per-run facts (CONFIG, EMULATOR_SRC_DIR, JOBS, ...) are make variables on the
-# command line, e.g.:
+# Without arguments: start the DUT work server inside the container and
+# publish it on the host port given by ACT_PORT (default 8000).
 #
-#   scripts/act_container.sh make elfs run CONFIG=rve-rv32i EMULATOR_SRC_DIR=/emulator
-#   scripts/act_container.sh make report-all
+#   scripts/act_container.sh
+#   ACT_PORT=9000 scripts/act_container.sh
+#
+# With arguments: dumb wrapper. Resolves the image, assembles the podman run
+# command (mounts + workdir + INI_FILE export) and exec's the given command
+# inside it. All other per-run facts (CONFIG, EMULATOR_SRC_DIR, JOBS, ...) are
+# make variables on the command line, e.g.:
+#
+#   scripts/act_container.sh make elfs CONFIG=rv32i EMULATOR_SRC_DIR=/emulator
 #
 # Image resolution: local build wins, else pull the remote tag, else a helpful
 # error. No build fallback. Override names via ACT_IMAGE_LOCAL/ACT_IMAGE_REMOTE.
@@ -31,11 +36,6 @@ else
   PRINT_ONLY=0
 fi
 
-if [[ $# -eq 0 ]]; then
-  echo "usage: $0 [--print] <command> [args...]" >&2
-  exit 1
-fi
-
 if podman image exists "$LOCAL_IMAGE"; then
   IMAGE="$LOCAL_IMAGE"
 elif podman pull "$REMOTE_IMAGE" >/dev/null 2>&1; then
@@ -44,6 +44,19 @@ else
   echo "Image '$LOCAL_IMAGE' not found and could not pull '$REMOTE_IMAGE'." >&2
   echo "Build it: cd ${ACT_REPO%/*}/RISC-V-emulator-Tools-Container && podman build -t $LOCAL_IMAGE ." >&2
   exit 1
+fi
+
+# Without arguments: start the DUT work server and publish it on the host.
+if [[ $# -eq 0 ]]; then
+  exec podman run --rm \
+    -v "${ACT_REPO}:/act" \
+    -v "${EMULATOR_REPO}:/emulator" \
+    -v "${ACT_REPO}/work:/opt/riscv-arch-test/work" \
+    -w /act \
+    -e INI_FILE=/emulator/platformio_isa-extension-combination_env.ini \
+    -e UV_NO_SYNC=1 \
+    -p "${ACT_PORT:-8000}:8000" \
+    -- "$IMAGE" python3 -m server
 fi
 
 # Mounts:
@@ -63,8 +76,8 @@ CMD=(podman run --rm "${TTY_FLAG[@]}"
   -v "${ACT_REPO}/work:/opt/riscv-arch-test/work"
   -w /act
   -e INI_FILE=/emulator/platformio_isa-extension-combination_env.ini
-  -e UV_NO_SYNC=1
-  -- "$IMAGE" "$@")
+  -e UV_NO_SYNC=1)
+CMD+=(-- "$IMAGE" "$@")
 
 if ((PRINT_ONLY)); then
   printf '%q ' "${CMD[@]}"

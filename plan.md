@@ -27,7 +27,7 @@ The container runs the ACT framework and a work server. The DUT (native emulator
 One repository, strict `server/` + `client/` package split. The two packages do not import each other. The client is a standalone pip-installable package (or zipapp) deployable to a DUT; the server is a separate package. Co-development stays in one repo; the deployment boundary is the package, not the repo.
 
 - `server/` — the work server, verdict parser, report renderer, objcopy.
-- `server/static/` — the OpenAPI spec, the Swagger UI page, and the shared stylesheet for the HTML pages. The stylesheet defines the dark theme: one palette, one font stack, no per-page overrides. The palette and font stack are adapted from the AetherOlifant project theme (implementation source of the styling; the plan carries the reference so the implementer knows where to copy from).
+- `server/static/` — the OpenAPI spec and the shared stylesheet for the HTML pages. The stylesheet defines the dark theme: one palette, one font stack, no per-page overrides. The palette and font stack are adapted from the AetherOlifant project theme (`frontend/src/assets/main.css` there): a VS-Dark palette with `#1e1e1e` background, `#252526` surface, `#2d2d30` elevated, `#3e3e42` hover and border, `#cccccc` text, `#858585` muted text, `#007acc` accent, `#4ec9b0` success, `#f44747` error. The palette is flattened into one plain CSS file with the same CSS custom properties; the pages are vanilla HTML, so Tailwind itself is not used.
 - `client/` — the puller that reads the ini, posts the batch, claims, runs the DUT, and posts results.
 - `scripts/act_container.sh` — the container launcher. The only shell script that remains.
 
@@ -41,7 +41,6 @@ One repository, strict `server/` + `client/` package split. The two packages do 
 - `GET /` -> a single static HTML page (vanilla JS, no framework, no build step) that polls `/status` and renders per-`(config, tag)` progress. The page renders only data `/status` returns; no additional endpoints. The `/` and `/report` pages share one stylesheet and one dark theme.
 - `GET /report` -> a static HTML page that renders the per-instruction, cross-config failure report (overall pass percentage, per-instruction pass/fail counts, failing envs, log excerpts, `Simulated N CPU instructions` totals). This replaces the standalone `report_all.py` script.
 - `GET /openapi.yaml` -> the hand-written OpenAPI spec. The spec is the source of truth for the API surface; client and server both follow it.
-- `GET /docs` -> Swagger UI, served from the `swagger-ui-dist` copy baked into the container image at image build time (pinned version, variant with built-in dark mode). The page is unstyled apart from its dark mode.
 - ELF-to-binary conversion (objcopy) happens server-side before handing out, as one `subprocess` call to `riscv64-unknown-elf-objcopy` (the toolchain lives in the container).
 
 ## Queue state
@@ -57,7 +56,8 @@ One repository, strict `server/` + `client/` package split. The two packages do 
 
 - On the initial `POST /batch`, the server queues `make elfs` for each config in a serialized background queue: one config generates at a time. The client builds its emulator binary (`make build`) concurrently on the DUT side.
 - The server holds no knowledge of targets, the ini, or ISA strings. The client reads the emulator's ini on the DUT side, normalizes the selected ISA strings, and posts them as the config values. The server treats a config name as an opaque string.
-- `gen_core.py` accepts the bare ISA string as the config name; the `rve-`/`rve-avr-` name prefixes and the name-based backend inference are removed. The generation templates (`link.ld`, `rvmodel_macros.h`) are parameterized and the server substitutes the posted settings into them, so one generated config serves any DUT that matches the settings.
+- `gen_core.py` accepts the bare ISA string as the config name, a `--tag` argument, and a `--settings` JSON file argument. The `rve-`/`rve-avr-` name prefixes and the name-based backend inference are removed. The settings schema is fixed: `{"load_base": <addr>, "halt_address": <addr>}`, no defaults; an incomplete post is a 400. `gen_core.py` validates the settings and substitutes them into the parameterized templates (`link.ld`, `rvmodel_macros.h`), so one generated config serves any DUT that matches the settings. The server shells out to `gen_core.py` per `(config, tag)` with the posted settings; it holds no template knowledge of its own.
+- Every on-disk path is two-level per pair: generated configs in `config/cores/atoomnetmarc/<CONFIG>/<TAG>/` and ELFs, state, and summaries under the ACT work dir `work/<CONFIG>/<TAG>/`. The Makefile gains a `TAG` variable threaded through all these paths. Tags cannot collide and settings invalidation is per-pair.
 - Per-config streaming: as soon as one config's `make elfs` finishes, the client can claim and run tests for that config while later configs generate. The unit of readiness is the whole config, not individual ELFs.
 - Claims for a config still generating return `{ready: false}`; the client sleeps briefly and polls again. The lease TTL starts only when a binary is handed out.
 - When `make elfs` for a config finishes, the server enumerates the test ids for that config by listing the built ELF directory: each ELF file name is a test id. No framework support is needed; the server owns discovery and the client never needs to know the test list.
@@ -71,10 +71,14 @@ One repository, strict `server/` + `client/` package split. The two packages do 
 - Generation failure (a failing `make elfs`) is an error status from `/claim` and `/status`; the client stops polling that pair. A client-side transport error or timeout on any endpoint is retried with backoff; an error status from the server is not.
 - The server is the sole owner of verdict parsing and report rendering. The `GET /` page shows live progress; the `GET /report` page shows the final per-instruction cross-config report. Both read the same `summary.log` and `logs/` artifacts the server writes.
 
+## Config selection
+
+- Every DUT project's ini marks its env blocks with `# isa: <bare ISA string>` and optionally `# smoke`. The client parses the ini in pure Python: it reads `[env:...]` blocks, selects all marked envs for `--full` or the `# smoke`-marked ones for `--smoke`, and applies the filter regex to the ISA string. The config value is the marked bare ISA string; the env name travels to the server as the optional `firmware_env` setting so generation targets the right firmware environment. No shell dependencies; `test_all.sh` is deleted.
+
 ## Client
 
 - A Python 3 package in `client/`, pip-installable.
-- Inputs: server URL, the emulator's `platformio_isa-extension-combination_env.ini` path, selection mode (`--full`/`--smoke`/filter regex), compiler tag, the generation settings for its DUT (load base, halt address), `--run` command template for the DUT, `--jobs N`, lease seconds. The emulator binary is built on the DUT side with `make build` before the client starts.
+- Inputs: server URL, the DUT project's PlatformIO ini path (the native emulator's `platformio_isa-extension-combination_env.ini` or the AVR project's `platformio.ini`), selection mode (`--full`/`--smoke`/filter regex), compiler tag, the generation settings for its DUT (load base, halt address), `--run` command template for the DUT, `--jobs N`, lease seconds. The emulator binary is built on the DUT side with `make build` before the client starts.
 - The DUT run command is a single `--run` template with a `{binary}` placeholder, for example `--run './emu {binary}'` or `--run 'simavr -m atmega328p --firmware {binary}'`. The client substitutes the claimed binary path and executes the template with the shell. The client holds no backend knowledge: any DUT that fits a shell command works.
 - The client reads the ini, selects the ISA strings with the same `--full`/`--smoke`/filter logic as `test_all.sh`, normalizes each string, and posts its generation settings plus the full `(config, tag)` list to the server in one `POST /batch`.
 - The client then iterates over each `(config, tag)` pair: claim -> write binary to temp file -> run on DUT (timeout = lease) -> post raw output and exit status -> repeat until `done` for that pair, then move to the next. With `--jobs N` a client runs N workers with concurrent claims within one config at a time.
@@ -83,7 +87,6 @@ One repository, strict `server/` + `client/` package split. The two packages do 
 ## Scripts
 
 - `scripts/act_container.sh` stays: it starts the container that auto-runs the server.
-- The `RISC-V-emulator-Tools-Container` image build fetches a pinned `swagger-ui-dist` (a variant with built-in dark mode) and bakes it into the image. The server serves it at `/docs`; the repository itself vendors no Swagger UI assets.
 - `scripts/test_all.sh`, `scripts/run_test.sh`, `scripts/elf2bin.sh` are removed. Env selection, objcopy, and the emulator-run wrapper move into the server and client packages as inline `subprocess` calls.
 
 ## Non-goals

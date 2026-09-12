@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<!-- Copyright Marc Ketel SPDX-License-Identifier: Apache-2.0 -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ACT live progress</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<h1>Live progress</h1>
+<p class="muted">Polls /status every 2 seconds. Click a pair to browse its elf builds and read test logs. <a href="/report">Report</a></p>
+<div id="pairs">Loading...</div>
+<script>
+const expanded = new Set();
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => '&' + '#' + c.charCodeAt(0) + ';');
+}
+
+function countsHtml(c) {
+  const counts = ['pending', 'claimed', 'pass', 'fail']
+    .map(k => `<span class="${k}">${k}: ${c[k] || 0}</span>`).join(' ');
+  const gen = c.generation
+    ? ` <span class="${c.generation === 'failed' ? 'generating-failed' : 'muted'}">generation: ${c.generation}</span>`
+    : '';
+  return counts + gen;
+}
+
+async function refresh() {
+  const response = await fetch('/status');
+  const data = await response.json();
+  const container = document.getElementById('pairs');
+  const names = Object.keys(data.pairs).sort();
+  if (names.length === 0) {
+    container.innerHTML = "<div class='card muted'>No batches posted yet.</div>";
+    return;
+  }
+  if (!container.querySelector('.card')) container.innerHTML = '';
+  container.querySelector('.card.muted')?.remove();
+  // Update existing cards in place so open log panes survive the poll.
+  for (const name of names) {
+    const counts = countsHtml(data.pairs[name]);
+    let card = container.querySelector(`.card[data-name="${CSS.escape(name)}"]`);
+    if (!card) {
+      card = document.createElement('div');
+      card.className = 'card';
+      card.dataset.name = name;
+      card.innerHTML = `<h2 class="pair-toggle" onclick="toggle('${esc(name)}')">${esc(name)}</h2>`
+        + `<div class="counts"></div>`
+        + `<div class="tests" id="tests-${cssId(name)}"></div>`;
+      container.appendChild(card);
+    }
+    card.querySelector('.counts').innerHTML = counts;
+    if (expanded.has(name)) updateTests(name);
+  }
+  for (const card of container.querySelectorAll('.card[data-name]')) {
+    if (!data.pairs[card.dataset.name]) card.remove();
+  }
+}
+
+function cssId(name) { return name.replace(/[^A-Za-z0-9]/g, '_'); }
+
+async function toggle(name) {
+  if (expanded.has(name)) {
+    expanded.delete(name);
+    document.querySelector(`.card[data-name="${CSS.escape(name)}"]`)?.classList.remove('open');
+    const box = document.getElementById('tests-' + cssId(name));
+    if (box) box.innerHTML = '';
+    return;
+  }
+  expanded.add(name);
+  document.querySelector(`.card[data-name="${CSS.escape(name)}"]`)?.classList.add('open');
+  await loadTests(name, true);
+}
+
+// Test ids look like <suite>/<extension>/<name>.elf; group on that prefix.
+function groupOf(testId) {
+  const parts = testId.split('/');
+  return parts.length > 2 ? parts.slice(0, 2).join('/') : parts[0];
+}
+
+async function loadTests(name, force) {
+  const box = document.getElementById('tests-' + cssId(name));
+  if (!box || !expanded.has(name)) return;
+  const [config, tag] = name.split('/');
+  const response = await fetch(`/tests?config=${encodeURIComponent(config)}&tag=${encodeURIComponent(tag)}`);
+  const data = await response.json();
+  const ids = Object.keys(data.tests).sort();
+  if (ids.length === 0) {
+    box.innerHTML = "<p class='muted'>No elf builds registered yet.</p>";
+    return;
+  }
+  const groups = {};
+  for (const id of ids) (groups[groupOf(id)] ??= []).push(id);
+  box.innerHTML = Object.keys(groups).sort().map(group => `
+    <details class="testgroup">
+      <summary>${esc(group)} <span class="muted">(${groups[group].length})</span></summary>
+      ${groups[group].map(id => testRow(name, id, data.tests[id])).join('')}
+    </details>`).join('');
+}
+
+function testRow(name, id, state) {
+  return `<div class="test ${state}" data-test-id="${esc(id)}">`
+    + `<span class="test-id">${esc(id)}</span><span class="test-state">${esc(state)}</span>`
+    + `<button onclick="toggleLog('${esc(name)}','${esc(id)}')">log</button>`
+    + `<pre class="logview" hidden></pre>`
+    + `</div>`;
+}
+
+// Keep states fresh without rebuilding: open logs survive the poll cycle.
+async function updateTests(name) {
+  const box = document.getElementById('tests-' + cssId(name));
+  if (!box || !box.querySelector('.testgroup')) return;
+  const [config, tag] = name.split('/');
+  const response = await fetch(`/tests?config=${encodeURIComponent(config)}&tag=${encodeURIComponent(tag)}`);
+  const data = await response.json();
+  const rows = box.querySelectorAll('.test');
+  if (rows.length !== Object.keys(data.tests).length) {
+    await loadTests(name, true);
+    return;
+  }
+  for (const row of rows) {
+    const id = row.dataset.testId;
+    const state = data.tests[id] || 'pending';
+    row.className = `test ${state}`;
+    row.querySelector('.test-state').textContent = state;
+  }
+}
+
+async function toggleLog(name, testId) {
+  const row = document.querySelector(`.card[data-name="${CSS.escape(name)}"] .test[data-test-id="${CSS.escape(testId)}"]`);
+  const pre = row.querySelector('.logview');
+  if (!pre.hidden) { pre.hidden = true; return; }
+  const [config, tag] = name.split('/');
+  const response = await fetch(`/log?config=${encodeURIComponent(config)}&tag=${encodeURIComponent(tag)}&test_id=${encodeURIComponent(testId)}`);
+  pre.textContent = response.ok ? await response.text() : 'No log available yet.';
+  pre.hidden = false;
+}
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

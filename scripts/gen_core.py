@@ -4,25 +4,24 @@
 #
 # Generate a core test configuration from an ISA combination.
 #
-# Usage: gen_core.py <config-name> [--backend {native,avr}]
-#   e.g. gen_core.py rve-rv32imacb_zicsr_zifencei
+# Usage: gen_core.py <config> --tag <tag> --settings <settings.json>
+#   e.g. gen_core.py rv32imacb_zicsr_zifencei --tag gcc --settings s.json
 #
-# The backend is taken from the --backend flag, or inferred from the config
-# name: names of the form rve-avr-<isa> select the avr backend.
-#
-# The config name maps to a PlatformIO environment in
-# ../RISC-V-emulator-Native/platformio_isa-extension-combination_env.ini
-# (rve-rv32imacb_zicsr_zifencei -> env RV32IMACBZicsr_Zifencei). The env block
+# The config name is the bare ISA string. It maps to a PlatformIO
+# environment in ../RISC-V-emulator-Native/platformio_isa-extension-combination_env.ini
+# (rv32imacb_zicsr_zifencei -> env RV32IMACBZicsr_Zifencei). The env block
 # supplies the emulator build flags and the "# act-" metadata comments.
 #
-# With --backend avr the config targets the simavr backend: config.mk selects
-# the ATmega1284P_ACT firmware environment in ../RISC-V-emulator-AVR and
-# rvmodel_macros.h halts through the AVR IO region at 0x02000000.
+# The settings JSON holds the DUT generation parameters:
+#   {"load_base": "0x80000000", "halt_address": "0x20000000"}
+# Both keys are required. The server passes the settings posted by the
+# client, so one generated config serves any DUT that matches them.
 #
-# Output: config/cores/atoomnetmarc/<config-name>/ with the files the ACT
+# Output: config/cores/atoomnetmarc/<config>/<tag>/ with the files the ACT
 # framework and the Makefile wrapper need.
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -44,11 +43,8 @@ INI_FILE = Path(os.environ.get(
     str(Path(_EMULATOR_SRC_DIR) / "platformio_isa-extension-combination_env.ini"),
 ))
 
-# The avr backend runs every ISA combination through one firmware environment
-# that enables all emulator extensions.
-AVR_ENV = "ATmega1284P_ACT"
-AVR_HALT_ADDRESS = "0x02000000"
-NATIVE_HALT_ADDRESS = "0x20000000"
+SETTINGS_KEYS = ("load_base", "halt_address")
+OPTIONAL_SETTINGS_KEYS = ("firmware_env",)
 
 # Per-subset metadata. "udb" entries land in implemented_extensions of the
 # architecture configuration, "sail" keys are flipped to supported in
@@ -180,13 +176,13 @@ SUBSETS = {
     "Zicond": {
         "udb": [("Zicond", "1.0.0")],
         "sail": ["Zicond"],
-        "params": [],
+        "params": ["  # Zicond params", "  TIME_CSR_IMPLEMENTED: true"],
         "header": ["ZICOND_SUPPORTED"],
     },
     "Zicntr": {
         "udb": [("Zicntr", "2.0.0")],
         "sail": ["Zicntr"],
-        "params": ["  # Zicntr params", "  TIME_CSR_IMPLEMENTED: true"],
+        "params": [],
         "header": [],
     },
     "Zihintntl": {
@@ -220,33 +216,35 @@ SUBSETS = {
 
 
 def env_name_from_config(config: str) -> str:
-    # Look up the PlatformIO environment case-insensitively, so the lowercased
-    # config name used by scripts/test_all.sh resolves too
-    # (rve-rv32ibzicsr_zifencei -> RV32IBZicsr_Zifencei). The avr backend uses
-    # config names of the form rve-avr-<isa>; the avr- prefix selects the
-    # backend and is not part of the ISA combination.
-    isa = config.removeprefix("rve-").removeprefix("avr-").lower()
+    # Look up the PlatformIO environment case-insensitively
+    # (rv32ibzicsr_zifencei -> RV32IBZicsr_Zifencei).
     for name in re.findall(r"^\[env:(\S+)\]", INI_FILE.read_text(), re.M):
-        if name.lower() == isa:
+        if name.lower() == config.lower():
             return name
     sys.exit(f"No environment matching {config!r} in {INI_FILE}")
 
 
 def subsets_from_env(env: str) -> list:
+    # The env name may carry a DUT prefix (e.g. ATmega1284P_RV32IMAB_Zicsr);
+    # everything from "RV32I" on is the ISA combination. Matching is
+    # case-insensitive so a lowercase "# isa:" marker string parses too.
     # RV32IMACBZicsr_Zifencei -> ["M", "A", "C", "B", "Zicsr", "Zifencei"]
-    body = env.removeprefix("RV32I")
+    body = re.search(r"RV32I(.*)$", env, re.I).group(1)
     named = sorted([key for key in SUBSETS if len(key) > 1], key=len, reverse=True)
-    parts = re.split("(" + "|".join(named) + ")", body)
+    parts = re.split("(" + "|".join(named) + ")", body, flags=re.I)
+    lookup = {key.lower(): key for key in SUBSETS}
     subsets = []
     for part in parts:
-        if part in SUBSETS:
-            subsets.append(part)
+        key = lookup.get(part.lower())
+        if key:
+            subsets.append(key)
         elif part:
             for letter in part:
                 if letter == "_":
                     continue
-                if letter in SUBSETS:
-                    subsets.append(letter)
+                key = lookup.get(letter.lower())
+                if key:
+                    subsets.append(key)
                 else:
                     sys.exit(f"Unknown subset letter {letter!r} in {env!r}")
     return subsets
@@ -263,7 +261,7 @@ def parse_ini_env(env: str) -> list:
 
 def gen_yaml(out: Path, config: str, env: str, subsets: list) -> None:
     text = (TEMPLATE_DIR / "core.yaml").read_text()
-    text = text.replace("rv32i variant", f"{config.removeprefix('rve-')} variant")
+    text = text.replace("rv32i variant", f"{config} variant")
     text = text.replace("name: rve-rv32i", f"name: {config}")
     text = text.replace(
         "description: RISC-V emulator (atoomnetmarc) - RV32I configuration DUT",
@@ -309,66 +307,87 @@ def gen_header(out: Path, subsets: list) -> None:
     (out / "rvtest_config.h").write_text(text + "\n")
 
 
-def gen_config_mk(out: Path, env: str, excludes: list, backend: str) -> None:
+def gen_config_mk(out: Path, env: str, excludes: list) -> None:
     lines = [
         "# Per-core settings for the Makefile wrapper. Generated by scripts/gen_core.py.\n",
+        f"EMULATOR_ENV := {env}\n",
+        f"EXCLUDE_EXTENSIONS := {' '.join(excludes)}\n",
     ]
-    if backend == "avr":
-        # The AVR firmware environment enables all extensions, so there is
-        # nothing to exclude.
-        lines += [f"EMULATOR_BACKEND := {backend}\n", f"EMULATOR_ENV := {env}\n"]
-    else:
-        lines += [
-            f"EMULATOR_ENV := {env}\n",
-            f"EXCLUDE_EXTENSIONS := {' '.join(excludes)}\n",
-        ]
     (out / "config.mk").write_text("".join(lines))
 
 
-def gen_test_config(out: Path, config: str) -> None:
+def gen_test_config(out: Path, tag: str, config: str) -> None:
     text = (TEMPLATE_DIR / "test_config.yaml").read_text()
-    text = text.replace("name: rve-rv32i", f"name: {config}")
+    # The framework puts the elfs in $(WORKDIR)/<name>/elfs; name the suite
+    # after the tag so they land in work/<CONFIG>/<TAG>/elfs.
+    text = text.replace("name: rve-rv32i", f"name: {tag}")
     text = text.replace("udb_config: rve-rv32i.yaml", f"udb_config: {config}.yaml")
     (out / "test_config.yaml").write_text(text)
 
 
-def gen_rvmodel_macros(out: Path, backend: str) -> None:
+def gen_link_ld(out: Path, settings: dict) -> None:
+    text = (TEMPLATE_DIR / "link.ld").read_text()
+    text = text.replace("{{LOAD_BASE}}", settings["load_base"])
+    (out / "link.ld").write_text(text)
+
+
+def gen_rvmodel_macros(out: Path, settings: dict) -> None:
     text = (TEMPLATE_DIR / "rvmodel_macros.h").read_text()
-    if backend == "avr":
-        # The AVR firmware intercepts the halt store in its IO region.
-        text = text.replace(NATIVE_HALT_ADDRESS, AVR_HALT_ADDRESS)
+    text = text.replace("{{HALT_ADDRESS}}", settings["halt_address"])
     (out / "rvmodel_macros.h").write_text(text)
+
+
+def load_settings(path: Path) -> dict:
+    try:
+        settings = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        sys.exit(f"Cannot read settings {path}: {exc}")
+    missing = [key for key in SETTINGS_KEYS if key not in settings]
+    if missing:
+        sys.exit(f"Settings missing required keys: {', '.join(missing)}")
+    allowed = SETTINGS_KEYS + OPTIONAL_SETTINGS_KEYS
+    unknown = [key for key in settings if key not in allowed]
+    if unknown:
+        sys.exit(f"Settings has unknown keys: {', '.join(unknown)}")
+    return settings
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("config")
-    parser.add_argument("--backend", choices=["native", "avr"], default=None)
+    parser.add_argument("--tag", required=True)
+    parser.add_argument("--settings", required=True, type=Path)
     args = parser.parse_args()
     config = args.config
-    backend = args.backend or (
-        "avr" if config.removeprefix("rve-").startswith("avr-") else "native"
-    )
+    settings = load_settings(args.settings)
 
-    # Subsets and excludes always derive from the native environment for the
-    # ISA combination; the avr backend only changes where the tests run.
-    native_env = env_name_from_config(config)
-    env = AVR_ENV if backend == "avr" else native_env
-    subsets = subsets_from_env(native_env)
-    excludes = [] if backend == "avr" else parse_ini_env(native_env)
+    # A posted firmware_env names the PlatformIO environment to build (e.g.
+    # the AVR ATmega1284P_ACT firmware env); without it the environment is
+    # looked up from the ini by the ISA string.
+    env = settings.get("firmware_env") or env_name_from_config(config)
+    # An env whose name does not encode an ISA (ATmega1284P_ACT) takes its
+    # subsets from the config, which carries the env's "# isa:" marker string.
+    if re.search(r"RV32I", env, re.I):
+        subsets = subsets_from_env(env)
+    else:
+        subsets = subsets_from_env(config)
+    try:
+        excludes = parse_ini_env(env_name_from_config(config))
+    except SystemExit:
+        excludes = []
 
-    out = CORES_DIR / config
+    out = CORES_DIR / config / args.tag
     if out.exists():
         sys.exit(f"{out} already exists")
     out.mkdir(parents=True)
 
-    shutil.copy(TEMPLATE_DIR / "link.ld", out / "link.ld")
-    gen_rvmodel_macros(out, backend)
+    gen_link_ld(out, settings)
+    gen_rvmodel_macros(out, settings)
     gen_yaml(out, config, env, subsets)
     gen_sail(out, subsets)
     gen_header(out, subsets)
-    gen_config_mk(out, env, excludes, backend)
-    gen_test_config(out, config)
+    gen_config_mk(out, env, excludes)
+    gen_test_config(out, args.tag, config)
     print(f"Generated {out}")
 
 
