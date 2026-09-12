@@ -27,6 +27,7 @@ The container runs the ACT framework and a work server. The DUT (native emulator
 One repository, strict `server/` + `client/` package split. The two packages do not import each other. The client is a standalone pip-installable package (or zipapp) deployable to a DUT; the server is a separate package. Co-development stays in one repo; the deployment boundary is the package, not the repo.
 
 - `server/` — the work server, verdict parser, report renderer, objcopy.
+- `server/static/` — the OpenAPI spec, the Swagger UI page, and the shared stylesheet for the HTML pages. The stylesheet defines the dark theme: one palette, one font stack, no per-page overrides. The palette and font stack are adapted from the AetherOlifant project theme (implementation source of the styling; the plan carries the reference so the implementer knows where to copy from).
 - `client/` — the puller that reads the ini, posts the batch, claims, runs the DUT, and posts results.
 - `scripts/act_container.sh` — the container launcher. The only shell script that remains.
 
@@ -37,8 +38,10 @@ One repository, strict `server/` + `client/` package split. The two packages do 
 - `POST /claim {config, tag, lease_seconds}` -> `{test_id, binary}`, `{ready: false}`, or `{done: true}`. Hands out the next unclaimed test under a file lock. Claim carries a TTL. Returns `{ready: false}` while that config's ELFs are still generating; the client sleeps briefly and polls again. Returns `{done: true}` when the config's state file is complete. If generation for the config failed, `/claim` responds with an error status; the client stops polling that pair and reports the failure.
 - `POST /result {test_id, config, tag, output, exit_status}` -> `200`. Idempotent. Server parses the verdict from the raw output, records it, releases the claim.
 - `GET /status?config=<name>&tag=<tag>` -> counts per state (pending, claimed, generating, pass, fail). For the live progress display.
-- `GET /` -> a single static HTML page (vanilla JS, no framework, no build step) that polls `/status` and renders per-`(config, tag)` progress. The page renders only data `/status` returns; no additional endpoints.
+- `GET /` -> a single static HTML page (vanilla JS, no framework, no build step) that polls `/status` and renders per-`(config, tag)` progress. The page renders only data `/status` returns; no additional endpoints. The `/` and `/report` pages share one stylesheet and one dark theme.
 - `GET /report` -> a static HTML page that renders the per-instruction, cross-config failure report (overall pass percentage, per-instruction pass/fail counts, failing envs, log excerpts, `Simulated N CPU instructions` totals). This replaces the standalone `report_all.py` script.
+- `GET /openapi.yaml` -> the hand-written OpenAPI spec. The spec is the source of truth for the API surface; client and server both follow it.
+- `GET /docs` -> Swagger UI, served from the `swagger-ui-dist` copy baked into the container image at image build time (pinned version, variant with built-in dark mode). The page is unstyled apart from its dark mode.
 - ELF-to-binary conversion (objcopy) happens server-side before handing out, as one `subprocess` call to `riscv64-unknown-elf-objcopy` (the toolchain lives in the container).
 
 ## Queue state
@@ -80,6 +83,7 @@ One repository, strict `server/` + `client/` package split. The two packages do 
 ## Scripts
 
 - `scripts/act_container.sh` stays: it starts the container that auto-runs the server.
+- The `RISC-V-emulator-Tools-Container` image build fetches a pinned `swagger-ui-dist` (a variant with built-in dark mode) and bakes it into the image. The server serves it at `/docs`; the repository itself vendors no Swagger UI assets.
 - `scripts/test_all.sh`, `scripts/run_test.sh`, `scripts/elf2bin.sh` are removed. Env selection, objcopy, and the emulator-run wrapper move into the server and client packages as inline `subprocess` calls.
 
 ## Non-goals
