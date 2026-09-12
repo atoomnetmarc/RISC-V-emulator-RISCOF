@@ -24,7 +24,7 @@
 # When the test is run in simulation, this should end the simulation.
 #define RVMODEL_HALT_PASS  \
   li x1, 123456789        ;\
-  li t0, 0x20000000       ;\
+  li t0, {{HALT_ADDRESS}} ;\
   write_halt_pass:        ;\
     sw x1, 0(t0)          ;\
     sw x0, 4(t0)          ;\
@@ -35,7 +35,7 @@
 # When the test is run in simulation, this should end the simulation.
 #define RVMODEL_HALT_FAIL \
   li x1, 1                ;\
-  li t0, 0x20000000       ;\
+  li t0, {{HALT_ADDRESS}} ;\
   write_halt_fail:        ;\
     sw x1, 0(t0)          ;\
     sw x0, 4(t0)          ;\

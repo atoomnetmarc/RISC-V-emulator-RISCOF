@@ -1,6 +1,10 @@
+.vscode
+.venv
 work
+client/act-work-client
+client/act_work_client.egg-info/
 
 # Generated core configurations (scripts/gen_core.py).
 config/cores/atoomnetmarc/*
 
-scripts/__pycache__
+__pycache__

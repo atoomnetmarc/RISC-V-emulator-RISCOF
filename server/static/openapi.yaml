@@ -1,0 +1,232 @@
+# Copyright Marc Ketel
+# SPDX-License-Identifier: Apache-2.0
+openapi: 3.0.3
+info:
+  title: ACT DUT work server
+  version: "1.0"
+  description: |
+    Generic work queue for ACT test runs. A client posts a batch of
+    (config, tag) pairs, claims tests, runs them on the DUT, and posts
+    raw output back. No TLS or auth: loopback/LAN use only.
+paths:
+  /batch:
+    post:
+      summary: Post the full list of (config, tag) pairs with generation settings
+      description: |
+        Idempotent merge: known pairs are ignored, unknown pairs are appended
+        to the generation queue. Settings are last-write-wins per tag; a post
+        with settings that differ from the stored ones invalidates and
+        regenerates all binaries for that tag.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchRequest'
+      responses:
+        '200':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: boolean
+        '400':
+          description: Invalid settings or configs
+  /claim:
+    post:
+      summary: Claim the next test for a pair
+      responses:
+        '200':
+          description: Next test, or ready/done marker
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Claimed'
+                  - type: object
+                    properties:
+                      ready:
+                        type: boolean
+                  - type: object
+                    properties:
+                      done:
+                        type: boolean
+        '500':
+          description: Generation for the pair failed
+  /result:
+    post:
+      summary: Post raw output for a claimed test
+      description: Idempotent. The server parses the verdict from the raw output.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResultRequest'
+      responses:
+        '200':
+          description: Recorded
+  /tests:
+    get:
+      summary: Test id -> state for one pair
+      parameters:
+        - name: config
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: tag
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Test states
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tests:
+                    type: object
+                    additionalProperties:
+                      type: string
+                      enum: [pending, claimed, pass, fail]
+        '400':
+          description: Missing config or tag
+  /log:
+    get:
+      summary: Full raw output log of one test
+      parameters:
+        - name: config
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: tag
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: test_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Raw DUT output
+          content:
+            text/plain:
+              schema:
+                type: string
+        '404':
+          description: No log for that test yet
+  /status:
+    get:
+      summary: Counts per state per pair
+      parameters:
+        - name: config
+          in: query
+          schema:
+            type: string
+        - name: tag
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Per-pair counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pairs:
+                    type: object
+                    additionalProperties:
+                      $ref: '#/components/schemas/Counts'
+components:
+  schemas:
+    Settings:
+      type: object
+      required: [load_base, halt_address]
+      additionalProperties: false
+      properties:
+        load_base:
+          type: string
+          description: Load address substituted into the generation linker script.
+        halt_address:
+          type: string
+          description: Halt address substituted into the generation macro header.
+        firmware_env:
+          type: string
+          description: |
+            PlatformIO environment to build for this config (e.g. the AVR
+            per-ISA envs). Optional; the default is derived from the native
+            emulator ini by the ISA string.
+    BatchRequest:
+      type: object
+      required: [settings, configs]
+      properties:
+        settings:
+          $ref: '#/components/schemas/Settings'
+        configs:
+          type: array
+          items:
+            type: object
+            required: [config, tag]
+            properties:
+              config:
+                type: string
+                description: Normalized ISA string (e.g. rv32imacb_zicsr_zifencei).
+              tag:
+                type: string
+                description: Free-form label namespacing results (e.g. gcc, avr).
+        lease_seconds:
+          type: integer
+          default: 30
+    Claimed:
+      type: object
+      required: [test_id, binary]
+      properties:
+        test_id:
+          type: string
+        binary:
+          type: string
+          format: byte
+          description: Base64-encoded objcopy binary of the test ELF.
+    ResultRequest:
+      type: object
+      required: [test_id, config, tag, output]
+      properties:
+        test_id:
+          type: string
+        config:
+          type: string
+        tag:
+          type: string
+        output:
+          type: string
+          description: Raw DUT output.
+        exit_status:
+          type: integer
+          default: 0
+    Counts:
+      type: object
+      properties:
+        pending:
+          type: integer
+        claimed:
+          type: integer
+        pass:
+          type: integer
+        fail:
+          type: integer
+        generation:
+          type: string
+          enum: [generating, failed]

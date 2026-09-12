@@ -1,0 +1,191 @@
+/*
+ * Copyright Marc Ketel
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Shared dark theme for the work server pages. Palette adapted from the
+ * AetherOlifant project theme.
+ */
+
+:root {
+  --aether-primary: #007acc;
+  --aether-primary-hover: #1a8ad4;
+  --aether-dark: #1e1e1e;
+  --aether-surface: #252526;
+  --aether-elevated: #2d2d30;
+  --aether-hover: #3e3e42;
+  --aether-text: #cccccc;
+  --aether-text-muted: #858585;
+  --aether-border: #3e3e42;
+  --aether-success: #4ec9b0;
+  --aether-error: #f44747;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 1.5rem;
+  background-color: var(--aether-dark);
+  color: var(--aether-text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+h1 {
+  font-size: 1.4rem;
+  color: var(--aether-text);
+}
+
+a {
+  color: var(--aether-primary);
+}
+
+a:hover {
+  color: var(--aether-primary-hover);
+}
+
+.card {
+  background-color: var(--aether-surface);
+  border: 1px solid var(--aether-border);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+.muted {
+  color: var(--aether-text-muted);
+}
+
+.counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.counts span {
+  background-color: var(--aether-elevated);
+  border: 1px solid var(--aether-border);
+  border-radius: 0.25rem;
+  padding: 0.15rem 0.6rem;
+}
+
+.counts .pass {
+  color: var(--aether-success);
+}
+
+.counts .fail,
+.instr.bad summary {
+  color: var(--aether-error);
+}
+
+.counts .generating-failed {
+  color: var(--aether-error);
+  font-weight: bold;
+}
+
+.instr {
+  background-color: var(--aether-surface);
+  border: 1px solid var(--aether-border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.instr summary {
+  cursor: pointer;
+}
+
+.instr.ok summary {
+  color: var(--aether-success);
+}
+
+.failure {
+  margin: 0.5rem 0 0.5rem 1rem;
+}
+
+.failure .env {
+  color: var(--aether-primary);
+}
+
+.failure .test {
+  color: var(--aether-text-muted);
+}
+
+pre {
+  background-color: var(--aether-elevated);
+  border: 1px solid var(--aether-border);
+  border-radius: 0.25rem;
+  padding: 0.5rem;
+  overflow-x: auto;
+  font-size: 0.8rem;
+}
+
+.pair-toggle {
+  cursor: pointer;
+}
+
+.pair-toggle:hover {
+  color: var(--aether-primary);
+}
+
+.testgroup {
+  margin-top: 0.5rem;
+}
+
+.testgroup summary {
+  cursor: pointer;
+  color: var(--aether-primary);
+}
+
+.test {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.15rem 0 0.15rem 1rem;
+}
+
+.test .test-id {
+  font-family: monospace;
+}
+
+.test .test-state {
+  margin-left: auto;
+}
+
+.test.pass .test-state {
+  color: var(--aether-success);
+}
+
+.test.fail .test-state {
+  color: var(--aether-error);
+}
+
+.test button {
+  background-color: var(--aether-elevated);
+  border: 1px solid var(--aether-border);
+  border-radius: 0.25rem;
+  color: var(--aether-text);
+  cursor: pointer;
+  padding: 0 0.5rem;
+}
+
+.test button:hover {
+  border-color: var(--aether-primary);
+  color: var(--aether-primary);
+}
+
+.test .logview {
+  margin: 0.25rem 0 0.25rem 1rem;
+  max-height: 20rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  flex-basis: 100%;
+}

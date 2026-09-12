@@ -1,114 +1,78 @@
 This is intended for me only. It contains code and hints on how to use [RISC-V Architectural Certification Tests](https://github.com/riscv/riscv-arch-test) tests using my [Linux implementation](https://github.com/atoomnetmarc/RISC-V-emulator-Native) of my [RISC-V emulator](https://github.com/atoomnetmarc/RISC-V-emulator).
 
-# Install
+# Quickstart
 
-These instructions target Arch Linux. They install the Sail reference model, the RISC-V toolchain, and the ACT4 framework dependencies.
-
-## General tools
+Build the container image once:
 
 ```bash
-sudo pacman --sync --refresh
-sudo pacman --sync --needed python python-pip git python-virtualenv make cmake opam z3 uv gcc shellcheck
+cd ../RISC-V-emulator-Tools-Container && podman build -t riscv-emulator-tools-container .
 ```
 
-## RISC-V toolchain
+Start the server (stays in the foreground):
 
 ```bash
-yay --sync --needed riscv32-gnu-toolchain-elf-bin
+scripts/act_container.sh
 ```
 
-Verify:
+In a second terminal, build the emulator binary and throw a client at it:
 
 ```bash
-riscv32-unknown-elf-gcc --version
-riscv32-unknown-elf-objcopy --version
+pio run -e RV32I -d ../RISC-V-emulator-Native
+client/act-work-client --server http://127.0.0.1:8000 \
+  --ini ../RISC-V-emulator-Native/platformio_isa-extension-combination_env.ini \
+  --smoke '^rv32i$' --tag gcc \
+  --load-base 0x80000000 --halt-address 0x20000000 \
+  --run '../RISC-V-emulator-Native/binaries/gcc/RV32I {binary}' --jobs 4
 ```
 
-## Build tools
+Watch live progress at http://127.0.0.1:8000/ and the failure report at http://127.0.0.1:8000/report.
 
-The script builds the Sail compiler, the RISC-V Sail model and the ACT4 framework under `./work/src/` (gitignored). It checks the system prerequisites above, then builds everything non-system. Re-running is safe; each step skips work that is already done.
+# Architecture
+
+The container runs the ACT framework and the DUT work server (`server/`, plain Python stdlib). The DUT (native emulator, simavr/AVR, or real hardware) runs on the host or on a remote machine next to the work client (`client/`). The client pulls work over HTTP, runs it on the DUT, and reports raw output back. The API contract is `server/static/openapi.yaml`
+
+`scripts/act_container.sh` resolves the image (local build wins, else `podman pull`), mounts this repo at `/act`, the emulator repo at `/emulator` and this repo's `work/` over the container clone's `work/` (so ELFs, state, summaries and run logs land on the host), and exports `INI_FILE` pointing at the emulator repo. Without arguments it starts the server and publishes `ACT_PORT` (default 8000). With arguments it exec's the given command inside the container (`--print` dumps the exact command). `podman` is the only host dependency.
+
+# Client
+
+One client per DUT. The client reads the ini, selects the ISA strings (`--full` for every environment or `--smoke` for the `# smoke`-marked ones, then the filter regex), posts the batch with its generation settings, and iterates: claim, run on the DUT, post output. The `--run` template is any shell command with a `{binary}` placeholder, so any DUT works. The lease doubles as the run timeout: the client kills the DUT when it expires, which fails the test for lack of a verdict signature.
 
 ```bash
-./scripts/install.sh
+client/act-work-client --server http://127.0.0.1:8000 \
+  --ini ../RISC-V-emulator-Native/platformio_isa-extension-combination_env.ini \
+  --full '^RV32IM' --tag gcc-13 \
+  --load-base 0x80000000 --halt-address 0x20000000 \
+  --run './emu {binary}' --jobs 4
 ```
 
-Core configs are generated on demand. A config name maps to a PlatformIO environment in `../RISC-V-emulator-Native/platformio_isa-extension-combination_env.ini` (`rve-rv32imacb_zicsr_zifencei` maps to env `RV32IMACBZicsr_Zifencei`). The first `make` invocation with a new `CONFIG` runs `scripts/gen_core.py`, which writes `config/cores/atoomnetmarc/<name>/` from the templates in `config/cores/template/`. The generated directory is gitignored; `make clean` removes it. Per-core metadata (such as excluded ACT extensions) travels from the emulator's ini generator as `# act-` comment lines in the env block.
+A client restart can re-post its batch without losing results; claims expire after `--lease-seconds` and the tests are re-handed out.
+
+# Generation
+
+The first generation for a `(config, tag)` pair runs `scripts/gen_core.py` (inside the container) with the posted settings, which writes `config/cores/atoomnetmarc/<config>/<tag>/` from the templates in `config/cores/template/`. A config name is the bare ISA string and maps to a PlatformIO environment in `../RISC-V-emulator-Native/platformio_isa-extension-combination_env.ini` (`rv32imacb_zicsr_zifencei` maps to env `RV32IMACBZicsr_Zifencei`). The generated directory is gitignored; `make clean CONFIG=<config>` removes it. Per-core metadata (such as excluded ACT extensions) travels from the emulator's ini generator as `# act-` comment lines in the env block.
+
+Raw output, `summary.log`, and the per-pair state file land under `work/src/riscv-arch-test/work/<config>/<tag>/`. Remove the ACT build outputs (including the framework's `work/` directory) and the generated core configs with `scripts/act_container.sh make clean CONFIG=<config>`.
 
 # AVR backend (simavr)
 
-Besides the native backend, tests can run on an ATmega1284P simulated by [simavr](https://github.com/rv8-io/simavr). The avr backend builds the AVR firmware in `../RISC-V-emulator-AVR` (env `ATmega1284P_ACT`, all extensions enabled, no instruction disassembly for maximum speed) and the simavr wrapper in `../RISC-V-emulator-SimAVR` (env `simavr-host`), then runs every test through the wrapper. The RISC-V RAM is backed by a simavr peripheral with host memory, and the firmware signals pass/fail through an exit register that stops the simulation.
-
-To debug a failing test, rebuild with the disassembly firmware (per-instruction UART disassembly, much slower):
+Tests can run on an ATmega1284P simulated by [simavr](https://github.com/rv8-io/simavr). One firmware, `ATmega1284P_ACT` in `../RISC-V-emulator-AVR/platformio.ini`, runs every config: it implements the full ACT ISA combination and talks to the simavr peripherals (VPI-backed RAM with host memory, and an exit register that stops the simulation and signals pass/fail). Build it and copy the result to `hex/`:
 
 ```bash
-make EMULATOR_ENV=ATmega1284P_ACT_DISASM build elfs run CONFIG=rve-avr-rv32i
+pio run -e ATmega1284P_ACT -d ../RISC-V-emulator-AVR
+cp ../RISC-V-emulator-AVR/.pio/build/ATmega1284P_ACT/firmware.hex ../RISC-V-emulator-AVR/hex/ATmega1284P_ACT.hex
 ```
 
-Config names of the form `rve-avr-<isa>` select the avr backend (`rve-avr-rv32i` runs the RV32I tests on the AVR). The generated `config.mk` sets `EMULATOR_BACKEND := avr`; run logs land in `work/test-all/avr/`. simavr and avr-gcc/avr-libc must be installed (see the SimAVR and AVR project READMEs).
+The AVR client is just another client: it selects from the AVR project's own ini, where only the ACT firmware envs carry `# isa:` / `# smoke` markers (`ATmega1284P_ACT` marks the full ISA combination it implements; the other envs are core builds, not test firmwares). It posts its own settings (`--halt-address 0x02000000`) under its own tag and runs every test against the one ACT firmware:
 
 ```bash
-make elfs build run CONFIG=rve-avr-rv32i
-BACKEND=avr ./scripts/test_all.sh --smoke   # every extension on the AVR
+client/act-work-client --server http://127.0.0.1:8000 \
+  --ini ../RISC-V-emulator-AVR/platformio.ini \
+  --smoke --tag avr \
+  --load-base 0x80000000 --halt-address 0x02000000 \
+  --run '../RISC-V-emulator-SimAVR/binaries/gcc/simavr-host ../RISC-V-emulator-AVR/hex/ATmega1284P_ACT.hex {binary}' --jobs 4
 ```
 
-Since the AVR firmware is one binary with all extensions enabled, the smoke suite covers the entire AVR DUT; per-combination configs add no extra coverage.
-
-# Usage
-
-Generate self-checking ELFs for a config:
-
-```bash
-make elfs CONFIG=rve-rv32i
-```
-
-Build the emulator binary for a config (PlatformIO, copied to
-`binaries/gcc/`; override `EMULATOR_TAG` for binaries built by
-`cmake/run-matrix.py` with another compiler, e.g.
-`make run CONFIG=rve-rv32i EMULATOR_TAG=clang`):
-
-```bash
-make build CONFIG=rve-rv32i
-```
-
-Run all ELFs for a config on the emulator. The run log lands in `work/test-all/<env>.log`, so `make report-all` includes it:
-
-```bash
-make run CONFIG=rve-rv32i
-```
-
-Print the summary:
-
-```bash
-make report CONFIG=rve-rv32i
-```
-
-Run the test suite for a subset of the environments in the ini (optionally filtered by regex, resumable, logs in `work/test-all/`). Envs run `nproc + 1` at a time; the pio compile is serialized with a lock. Override the parallelism with the `PARALLEL` and `JOBS` environment variables. A mode flag is required; running the script with no flag prints usage with the env count for each mode:
-
-```bash
-./scripts/test_all.sh --full              # every environment in the ini
-./scripts/test_all.sh --smoke            # each extension alone + maximal-inclusion envs
-./scripts/test_all.sh --smoke '^RV32IM'  # apply a regex after subset selection
-EMULATOR_TAG=gcc-13 test_all.sh --full '^RV32I'   # compiler list (default: gcc,clang)
-```
-
-List the selected combinations without running them:
-
-```bash
-./scripts/test_all.sh --smoke --dry-run
-PARALLEL=2 JOBS=2 ./scripts/test_all.sh --full
-```
-
-Aggregate all summaries into an HTML report. The top shows a summary with the overall pass percentage. Below it, a collapsible section per instruction shows the pass/fail count and the failing envs:
-
-```bash
-make report-all
-```
-
-Remove the ACT build outputs (including the framework's `work/` directory), the generated core configs, and the `work/test-all/` logs:
-
-```bash
-make clean
-```
+The simavr wrapper builds in `../RISC-V-emulator-SimAVR` (env `simavr-host`). To debug a failing test, point `--run` at the disassembly firmware instead: build `ATmega1284P_ACT_DISASM` (per-instruction UART disassembly, much slower) and copy it the same way.
 
 # License
 
